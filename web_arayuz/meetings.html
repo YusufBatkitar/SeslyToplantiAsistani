@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Toplantılar · Toplantı Botu Paneli</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="/assets/css/meetings.css">
+  <!-- Supabase JS -->
+  <!-- Supabase JS -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- SweetAlert2 -->
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <!-- Lottie Player -->
+  <script src="https://unpkg.com/@lottiefiles/lottie-player@latest/dist/lottie-player.js"></script>
+  <style>
+    /* LOCAL STYLES FOR ACTION BUTTONS */
+    .btn-action {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 500;
+      padding: 6px 12px;
+      border-radius: 8px;
+      transition: all 0.2s ease;
+      background: #f1f5f9;
+      color: #334155;
+      border: 1px solid transparent;
+    }
+
+    .btn-action:hover {
+      background: #e2e8f0;
+      color: #0f172a;
+      transform: translateY(-1px);
+    }
+
+    .btn-action.primary {
+      background: #eff6ff;
+      color: #2563eb;
+      border-color: #dbeafe;
+    }
+
+    .btn-action.primary:hover {
+      background: #dbeafe;
+    }
+
+    .btn-action.secondary {
+      background: #f5f3ff;
+      color: #7c3aed;
+      border: 1px solid #ede9fe;
+    }
+
+    .btn-action.secondary:hover {
+      background: #ede9fe;
+    }
+
+    .btn-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      border: none;
+      background: transparent;
+      color: #64748b;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn-icon:hover {
+      background: #e2e8f0;
+      color: #0f172a;
+    }
+
+    .action-group {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      border: 1px solid #e2e8f0;
+      padding: 3px;
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .divider {
+      width: 1px;
+      height: 16px;
+      background: #cbd5e1;
+      margin: 0 4px;
+    }
+
+    /* SVG ICONS */
+    svg.icon {
+      width: 16px;
+      height: 16px;
+      stroke-width: 2;
+    }
+
+    /* CUSTOM SWEETALERT STYLES - CLEAN & MINIMAL */
+    .swal-custom-popup {
+      border-radius: 16px !important;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05) !important;
+    }
+
+    .swal-custom-title {
+      color: #111827 !important;
+      font-size: 1.25rem !important;
+      font-weight: 600 !important;
+      padding-bottom: 0 !important;
+    }
+
+    .swal-custom-content {
+      color: #6b7280 !important;
+      font-size: 0.95rem !important;
+    }
+
+    .swal-custom-confirm {
+      border-radius: 8px !important;
+      padding: 8px 16px !important;
+      font-weight: 500 !important;
+      box-shadow: none !important;
+      background-color: #ef4444 !important;
+      /* Soft Red */
+    }
+
+    .swal-custom-cancel {
+      border-radius: 8px !important;
+      padding: 8px 16px !important;
+      font-weight: 500 !important;
+      background-color: #f3f4f6 !important;
+      /* Gray-100 */
+      color: #374151 !important;
+      /* Gray-700 */
+    }
+
+    .swal-custom-cancel:hover {
+      background-color: #e5e7eb !important;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div>
+        <div class="logo">SESLY</div>
+        <ul class="menu">
+          <li><a href="/admin">Dashboard</a></li>
+          <li><a href="/meetings" class="active">Toplantılar</a></li>
+          <li><a href="/calendar">Takvim</a></li>
+          <li><a href="/profile">Profil</a></li>
+          <li><a href="#" id="logoutBtn">Çıkış</a></li>
+        </ul>
+      </div>
+      <div class="sidebar-footer">
+        © 2025 Sesly · Toplantı Botu
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="main-header">
+        <div>
+          <h1>Toplantılar</h1>
+          <p class="header-sub">
+            Geçmiş ve yaklaşan tüm toplantı kayıtlarını buradan yönetebilirsin.
+          </p>
+        </div>
+      </header>
+
+      <!-- Filtre kartı -->
+      <section class="card">
+        <div class="card-title-row">
+          <h2 class="card-title">Filtreler</h2>
+          <span class="pill pill-small" id="filterCountBadge">Tümü gösteriliyor</span>
+        </div>
+        <p class="card-sub">
+          Toplantıları platforma, isme veya tarihe göre filtreleyebilirsiniz.
+        </p>
+
+        <div class="form-row">
+          <div class="form-col">
+            <label for="filterPlatform">Platform</label>
+            <select id="filterPlatform" onchange="filterMeetings()">
+              <option value="">Hepsi</option>
+              <option value="zoom">Zoom</option>
+              <option value="teams">Microsoft Teams</option>
+              <option value="meet">Google Meet</option>
+            </select>
+          </div>
+          <div class="form-col">
+            <label for="filterName">Toplantı Adı</label>
+            <input id="filterName" type="text" placeholder="Örn: Proje" onkeyup="filterMeetings()" />
+          </div>
+          <div class="form-col">
+            <label for="filterDate">Tarih</label>
+            <input id="filterDate" type="date" onchange="filterMeetings()" />
+          </div>
+        </div>
+      </section>
+
+      <!-- Toplantı listesi -->
+      <section class="card">
+        <div class="card-title-row">
+          <h2 class="card-title">Toplantı Listesi</h2>
+          <span class="pill pill-small" id="meetingsCount">0 kayıt</span>
+        </div>
+
+        <div class="table-wrapper">
+          <table style="width: 100%; min-width: 800px;">
+            <thead>
+              <tr>
+                <th style="width: 25%;">Ad</th>
+                <th style="width: 10%;">Platform</th>
+                <th style="width: 15%;">Tarih</th>
+                <th style="width: 10%;">Saat</th>
+                <th style="width: 10%;">Durum</th>
+                <th style="width: 30%;">İşlemler</th>
+              </tr>
+            </thead>
+
+            <!-- 🔴 LİSTE -->
+            <tbody id="meetingsTbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <script>
+        // ✅ Supabase Ayarları
+        const SUPABASE_URL = "{{ SUPABASE_URL }}";
+        const SUPABASE_ANON_KEY = "{{ SUPABASE_ANON_KEY }}";
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // GLOBAL DATA
+        let allMeetings = [];
+
+        // ==========================================
+        // YARDIMCI: DOSYA İNDİRME 
+        // ==========================================
+        async function downloadFile(url, fileName) {
+          try {
+            document.body.style.cursor = 'wait';
+            const res = await fetch(url);
+            if (!res.ok) throw new Error("Dosya indirilemedi");
+
+            const blob = await res.blob();
+            const blobUrl = window.URL.createObjectURL(blob);
+
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(blobUrl);
+            document.body.style.cursor = 'default';
+
+          } catch (err) {
+            document.body.style.cursor = 'default';
+            console.error("İndirme hatası:", err);
+            alert("İndirme başlatılamadı, dosya yeni sekmede açılıyor.");
+            window.open(url, "_blank");
+          }
+        }
+
+        // ==========================================
+        // 1. KULLANICI YÜKLEME
+        // ==========================================
+        async function loadUserSession() {
+          try {
+            const { data: { session }, error } = await supabaseClient.auth.getSession();
+
+            if (error || !session) {
+              document.querySelector("table tbody").innerHTML =
+                "<tr><td colspan='6' style='text-align:center; padding:20px; color:#666;'>Görüntülemek için giriş yapmalısınız.</td></tr>";
+              document.getElementById("meetingsCount").textContent = "-";
+              return;
+            }
+
+            const userId = session.user.id;
+            loadMeetings(userId);
+
+          } catch (err) {
+            console.error("[CRITICAL] loadUserSession hatası:", err);
+          }
+        }
+
+        // ==========================================
+        // 2. VERİLERİ ÇEKME
+        // ==========================================
+        async function loadMeetings(userId) {
+          const tbody = document.querySelector("#meetingsTbody");
+          tbody.innerHTML = "<tr><td colspan='6' style='text-align:center; padding:30px; color:#64748b;'>Veriler yükleniyor...</td></tr>";
+
+          try {
+            const { data: meetings, error } = await supabaseClient
+              .from('meetings')
+              .select('*')
+              .eq('user_id', userId)
+              .order('created_at', { ascending: false });
+
+            if (error) throw error;
+
+            allMeetings = meetings || [];
+            renderMeetings(allMeetings);
+
+          } catch (err) {
+            console.error("[DB ERROR]", err);
+            tbody.innerHTML = `<tr><td colspan='6' style='text-align:center; color:#ef4444; padding:20px;'>Veri çekme hatası</td></tr>`;
+          }
+        }
+
+        // ==========================================
+        // 3. RENDER (LİSTELEME)
+        // ==========================================
+        function renderMeetings(list) {
+          const tbody = document.querySelector("#meetingsTbody");
+          const countBadge = document.getElementById("meetingsCount");
+
+          if (!list || list.length === 0) {
+            tbody.innerHTML = "<tr><td colspan='6' style='text-align:center; padding:30px; color:#94a3b8;'>Kayıt bulunamadı.</td></tr>";
+            countBadge.textContent = "0 kayıt";
+            return;
+          }
+
+          countBadge.textContent = `${list.length} kayıt`;
+          tbody.innerHTML = "";
+
+          list.forEach(m => {
+            const dateObj = new Date(m.start_time);
+            const dateStr = dateObj.toLocaleDateString("tr-TR");
+            const timeStr = dateObj.toLocaleTimeString("tr-TR", { hour: '2-digit', minute: '2-digit' });
+
+            // Durum Badge
+            let statusBadge = `<span class="badge ${m.status}">${m.status}</span>`;
+            if (m.status === 'completed') statusBadge = '<span class="status-badge done">Tamamlandı</span>';
+
+            // Dosya İsimleri
+            const safeTitle = (m.title || "Toplanti").replace(/[^a-zA-Z0-9çğıöşüÇĞİÖŞÜ]/g, "_");
+
+            // Icons
+            const iconReport = `<svg xmlns="http://www.w3.org/2000/svg" class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>`;
+            const iconTxt = `<svg xmlns="http://www.w3.org/2000/svg" class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>`;
+            const iconDownload = `<svg xmlns="http://www.w3.org/2000/svg" class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`;
+            const iconTrash = `<svg xmlns="http://www.w3.org/2000/svg" class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>`;
+
+            // Actions
+            let actions = `<div style="display:flex; gap:10px;">`;
+
+            if (m.report_path) {
+              // Proxy endpoint kullan (Supabase MIME sorunu için)
+              const viewUrl = m.report_path.includes('supabase')
+                ? `/view-report?url=${encodeURIComponent(m.report_path)}`
+                : m.report_path;
+              actions += `
+                    <div class="action-group">
+                        <a href="${viewUrl}" target="_blank" class="btn-action primary" title="Raporu Görüntüle">
+                           ${iconReport} Rapor
+                        </a>
+                        <div class="divider"></div>
+                        <button onclick="downloadFile('${m.report_path}', '${safeTitle}_Rapor.html')" class="btn-icon" title="İndir">
+                           ${iconDownload}
+                        </button>
+                    </div>`;
+            }
+
+            if (m.transcript_path) {
+              // Proxy endpoint kullan (Encoding sorunu için)
+              const transcriptViewUrl = m.transcript_path.includes('supabase')
+                ? `/view-transcript?url=${encodeURIComponent(m.transcript_path)}`
+                : m.transcript_path;
+              actions += `
+                    <div class="action-group">
+                        <a href="${transcriptViewUrl}" target="_blank" class="btn-action secondary" title="Transkripti Görüntüle">
+                           ${iconTxt} Transkript
+                        </a>
+                        <div class="divider"></div>
+                        <button onclick="downloadFile('${m.transcript_path}', '${safeTitle}_Transkript.txt')" class="btn-icon" title="İndir">
+                           ${iconDownload}
+                        </button>
+                    </div>`;
+            }
+
+
+            // DELETE BUTTON
+            actions += `
+                <div class="action-group" style="border-color: #fee2e2;">
+                    <button onclick="deleteMeeting('${m.id}')" class="btn-icon" title="Toplantı Kaydını Sil" style="color:#ef4444;">
+                       ${iconTrash}
+                    </button>
+                </div>
+            `;
+
+            actions += `</div>`;
+
+            const row = `
+                    <tr>
+                        <td style="font-weight:500;">${m.title || 'İsimsiz Toplantı'}</td>
+                        <td><span class="tag">${m.platform || 'Zoom'}</span></td>
+                        <td>${dateStr}</td>
+                        <td>${timeStr}</td>
+                        <td>${statusBadge}</td>
+                        <td>${actions}</td>
+                    </tr>
+                `;
+            tbody.innerHTML += row;
+          });
+        }
+
+        // ==========================================
+        // 4. FİLTRELEME
+        // ==========================================
+        function filterMeetings() {
+          const platformVal = document.getElementById("filterPlatform").value.toLowerCase();
+          const nameVal = document.getElementById("filterName").value.toLowerCase();
+          const dateVal = document.getElementById("filterDate").value; // YYYY-MM-DD
+
+          const filtered = allMeetings.filter(m => {
+            // 1. Platform Check
+            const pInfo = (m.platform || "").toLowerCase();
+            if (platformVal && !pInfo.includes(platformVal)) return false;
+
+            // 2. Name Check
+            const tInfo = (m.title || "").toLowerCase();
+            if (nameVal && !tInfo.includes(nameVal)) return false;
+
+            // 3. Date Check
+            // db date: "2025-12-18T09:07:38+00:00" -> substr(0,10) = "2025-12-18"
+            if (dateVal) {
+              const mDate = (m.start_time || "").substring(0, 10);
+              if (mDate !== dateVal) return false;
+            }
+
+            return true;
+          });
+
+          renderMeetings(filtered);
+
+          // Badge Update
+          const badge = document.getElementById("filterCountBadge");
+          if (filtered.length !== allMeetings.length) {
+            badge.textContent = `${filtered.length} sonuç gösteriliyor`;
+            badge.style.background = "#fffbeb";
+            badge.style.color = "#d97706";
+          } else {
+            badge.textContent = "Tümü gösteriliyor";
+            badge.style.background = "#e5e7eb";
+            badge.style.color = "#4b5563";
+          }
+        }
+
+
+        // ==========================================
+        // 5. DELETE MEETING
+        // ==========================================
+        async function deleteMeeting(meetingId) {
+          const result = await Swal.fire({
+            title: '',
+            html: `
+                <style>
+                    .swal-futuristic-popup {
+                        border-radius: 20px !important;
+                        background: linear-gradient(145deg, #0f172a 0%, #1e1b4b 100%) !important;
+                        border: 1px solid rgba(139, 92, 246, 0.3) !important;
+                        box-shadow: 0 25px 60px rgba(139, 92, 246, 0.2), 0 0 40px rgba(59, 130, 246, 0.1) !important;
+                    }
+                    .swal-futuristic-icon {
+                        width: 80px;
+                        height: 80px;
+                        margin: 24px auto 16px auto;
+                        border-radius: 50%;
+                        background: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(59, 130, 246, 0.1) 100%);
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        position: relative;
+                        animation: pulse-glow 2s ease-in-out infinite;
+                    }
+                    @keyframes pulse-glow {
+                        0%, 100% { box-shadow: 0 0 20px rgba(139, 92, 246, 0.3); }
+                        50% { box-shadow: 0 0 40px rgba(139, 92, 246, 0.5), 0 0 60px rgba(59, 130, 246, 0.3); }
+                    }
+                    .swal-futuristic-icon svg {
+                        width: 40px;
+                        height: 40px;
+                        stroke: url(#iconGradient);
+                        stroke-width: 2;
+                        fill: none;
+                    }
+                    .swal-futuristic-title {
+                        font-size: 22px !important;
+                        font-weight: 700 !important;
+                        color: #f1f5f9 !important;
+                        margin: 0 0 8px 0 !important;
+                        text-align: center;
+                    }
+                    .swal-futuristic-text {
+                        font-size: 14px !important;
+                        color: #94a3b8 !important;
+                        line-height: 1.6 !important;
+                        text-align: center;
+                        margin-bottom: 24px !important;
+                    }
+                    .swal-futuristic-actions {
+                        display: flex !important;
+                        gap: 12px !important;
+                        padding: 0 24px 24px 24px !important;
+                        margin: 0 !important;
+                    }
+                    .swal-futuristic-confirm {
+                        flex: 1 !important;
+                        padding: 14px 24px !important;
+                        border: none !important;
+                        border-radius: 12px !important;
+                        font-size: 14px !important;
+                        font-weight: 600 !important;
+                        cursor: pointer !important;
+                        background: linear-gradient(135deg, #8b5cf6 0%, #3b82f6 100%) !important;
+                        color: white !important;
+                        box-shadow: 0 4px 15px rgba(139, 92, 246, 0.4) !important;
+                        transition: all 0.2s ease !important;
+                    }
+                    .swal-futuristic-confirm:hover {
+                        transform: translateY(-2px) !important;
+                        box-shadow: 0 6px 20px rgba(139, 92, 246, 0.5) !important;
+                    }
+                    .swal-futuristic-cancel {
+                        flex: 1 !important;
+                        padding: 14px 24px !important;
+                        border: 1px solid rgba(148, 163, 184, 0.3) !important;
+                        border-radius: 12px !important;
+                        font-size: 14px !important;
+                        font-weight: 600 !important;
+                        cursor: pointer !important;
+                        background: rgba(255, 255, 255, 0.05) !important;
+                        color: #94a3b8 !important;
+                        transition: all 0.2s ease !important;
+                    }
+                    .swal-futuristic-cancel:hover {
+                        background: rgba(255, 255, 255, 0.1) !important;
+                        color: #f1f5f9 !important;
+                    }
+                </style>
+                <svg width="0" height="0" style="position:absolute;">
+                    <defs>
+                        <linearGradient id="iconGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" style="stop-color:#8b5cf6"/>
+                            <stop offset="100%" style="stop-color:#3b82f6"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <div class="swal-futuristic-icon">
+                    <svg viewBox="0 0 24 24">
+                        <polyline points="3 6 5 6 21 6" stroke="url(#iconGradient)"></polyline>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke="url(#iconGradient)"></path>
+                        <line x1="10" y1="11" x2="10" y2="17" stroke="url(#iconGradient)"></line>
+                        <line x1="14" y1="11" x2="14" y2="17" stroke="url(#iconGradient)"></line>
+                    </svg>
+                </div>
+                <h3 class="swal-futuristic-title">Kaydı Sil?</h3>
+                <div class="swal-futuristic-text">
+                    Bu işlem geri alınamaz.<br>Kayıt ve transkript kalıcı olarak silinecektir.
+                </div>
+            `,
+            icon: null,
+            showCancelButton: true,
+            confirmButtonText: 'Evet, Sil',
+            cancelButtonText: 'Vazgeç',
+            reverseButtons: true,
+            focusCancel: true,
+            width: '380px',
+            padding: '0',
+            backdrop: `rgba(2, 6, 23, 0.85)`,
+            buttonsStyling: false,
+            customClass: {
+              popup: 'swal-futuristic-popup',
+              htmlContainer: 'swal-futuristic-content',
+              confirmButton: 'swal-futuristic-confirm',
+              cancelButton: 'swal-futuristic-cancel',
+              actions: 'swal-futuristic-actions'
+            }
+          });
+
+          if (!result.isConfirmed) return;
+
+          const { data: { session } } = await supabaseClient.auth.getSession();
+          if (!session) {
+            Swal.fire({
+              icon: 'error',
+              title: 'Oturum Hatası',
+              text: 'Lütfen tekrar giriş yapın.',
+              confirmButtonColor: '#3b82f6'
+            });
+            return;
+          }
+
+          // Backend'e silme isteği gönder
+          try {
+            document.body.style.cursor = 'wait';
+
+            // Show loading
+            Swal.showLoading();
+
+            const res = await fetch("/delete-meeting", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                meeting_id: meetingId,
+                user_id: session.user.id
+              })
+            });
+
+            const data = await res.json();
+            document.body.style.cursor = 'default';
+
+            if (data.ok) {
+              // Listeden kaldır (local update)
+              allMeetings = allMeetings.filter(m => m.id !== meetingId);
+              renderMeetings(allMeetings); // Re-render
+
+              // Count Guncelle
+              const badge = document.getElementById("meetingsCount");
+              badge.textContent = `${allMeetings.length} kayıt`;
+
+              Swal.fire({
+                title: 'Silindi!',
+                text: 'Kayıt ve dosyalar başarıyla silindi.',
+                icon: 'success',
+                timer: 2000,
+                showConfirmButton: false
+              });
+            } else {
+              Swal.fire("Hata", "Silme başarısız: " + (data.error || "Bilinmeyen hata"), "error");
+            }
+          } catch (e) {
+            document.body.style.cursor = 'default';
+            console.error("Delete error:", e);
+            Swal.fire("Bağlantı Hatası", "Sunucuyla iletişim kurulamadı.", "error");
+          }
+        }
+
+        window.onload = loadUserSession;
+      </script>
+</body>
+
+</html>

@@ -1,0 +1,502 @@
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: system-ui, sans-serif;
+    background: #ecfeff;
+    color: #111827;
+}
+
+.layout {
+    display: flex;
+    min-height: 100vh;
+}
+
+/* Sidebar */
+.sidebar {
+    width: 240px;
+    background: #020617;
+    color: #e5e7eb;
+    padding: 24px 20px;
+    display: flex;
+    flex-direction: column;
+}
+
+.logo {
+    font-family: "Poppins", "Montserrat", "Segoe UI", Arial, sans-serif;
+    font-weight: 500;
+    /* biraz ince */
+    font-size: 35px;
+    letter-spacing: 0.06em;
+
+    background: linear-gradient(90deg,
+            #FF4FB6 0%,
+            #9A5BFF 45%,
+            #4DA7FF 100%);
+
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    /* Chrome/Safari */
+    color: transparent;
+    /* diğerleri */
+}
+
+.logo {
+    margin-bottom: 32px;
+    /* logo biraz nefes alsın */
+}
+
+.menu .item {
+    margin-bottom: 10px;
+    /* menüler de sıkışmasın */
+}
+
+
+
+.logo span {
+    color: #06b6d4;
+}
+
+.menu {
+    list-style: none;
+}
+
+.menu li {
+    margin-bottom: 10px;
+}
+
+.menu a {
+    text-decoration: none;
+    display: block;
+    padding: 10px 12px;
+    color: #e5e7eb;
+    border-radius: 8px;
+}
+
+.menu a.active,
+.menu a:hover {
+    background: #111827;
+}
+
+.sidebar-footer {
+    margin-top: auto;
+    opacity: 0.6;
+    font-size: 12px;
+}
+
+/* Ana alan */
+.main {
+    flex: 1;
+    padding: 26px;
+}
+
+.main-header h1 {
+    font-size: 24px;
+    font-weight: 700;
+}
+
+.header-sub {
+    font-size: 13px;
+    color: #64748b;
+}
+
+/* Grid alan */
+.content-grid {
+    margin-top: 20px;
+    display: grid;
+    grid-template-columns: 2fr 1.2fr;
+    gap: 20px;
+}
+
+/* Kartlar */
+.card {
+    background: #f9fafb;
+    padding: 18px 20px;
+    border-radius: 16px;
+    box-shadow: 0 20px 45px rgba(15, 23, 42, 0.12);
+}
+
+/* Takvim */
+.calendar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.nav-btn {
+    background: #0f172a;
+    color: #e5e7eb;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.nav-btn:hover {
+    background: #06b6d4;
+}
+
+.month-label {
+    font-size: 18px;
+    font-weight: bold;
+    text-align: center;
+}
+
+.month-sub {
+    font-size: 11px;
+    color: #64748b;
+    text-align: center;
+}
+
+.calendar-grid {
+    margin-top: 8px;
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 6px;
+}
+
+.calendar-head {
+    margin-bottom: 4px;
+}
+
+.day-name {
+    font-size: 11px;
+    color: #475569;
+    text-align: center;
+    font-weight: 600;
+}
+
+.day {
+    background: #e0f2fe;
+    border-radius: 12px;
+    padding: 6px;
+    text-align: center;
+    font-size: 12px;
+    min-height: 52px;
+    cursor: pointer;
+    position: relative;
+}
+
+.day.empty {
+    background: transparent;
+    cursor: default;
+}
+
+.day:hover:not(.empty) {
+    background: #bae6fd;
+}
+
+.day.today {
+    outline: 2px solid #06b6d4;
+}
+
+/* Platform renkleri */
+.day.zoom {
+    border: 2px solid #3b82f6;
+}
+
+.day.teams {
+    border: 2px solid #6366f1;
+}
+
+.day.meet {
+    border: 2px solid #22c55e;
+}
+
+/* Event badge */
+.badge {
+    display: inline-block;
+    margin-top: 4px;
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: #0f172a;
+    color: #e5e7eb;
+    font-size: 10px;
+}
+
+/* Sağ panel */
+.side-title {
+    font-size: 16px;
+    margin-bottom: 4px;
+}
+
+.side-sub {
+    font-size: 11px;
+    color: #64748b;
+    margin-bottom: 10px;
+}
+
+.events-list {
+    list-style: none;
+}
+
+.event-item {
+    display: flex;
+    align-items: center;
+    background: #e0f2fe;
+    border-radius: 12px;
+    padding: 8px;
+    margin-bottom: 8px;
+}
+
+.event-date {
+    width: 40px;
+    background: #0f172a;
+    color: white;
+    text-align: center;
+    border-radius: 10px;
+    padding: 3px;
+}
+
+.event-day {
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.event-month {
+    font-size: 10px;
+}
+
+.event-info {
+    margin-left: 10px;
+}
+
+.event-name {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.event-meta {
+    font-size: 10px;
+    color: #475569;
+}
+
+/* ⭐ Modal (popup) ⭐ */
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.55);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 40;
+}
+
+.modal-backdrop.open {
+    display: flex;
+}
+
+.modal {
+    background: #f9fafb;
+    padding: 20px 22px;
+    border-radius: 16px;
+    box-shadow: 0 25px 60px rgba(15, 23, 42, 0.5);
+    width: 280px;
+}
+
+.modal-title {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.modal-sub {
+    font-size: 12px;
+    color: #6b7280;
+    margin-bottom: 12px;
+}
+
+.modal-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.modal-field label {
+    display: block;
+    font-size: 12px;
+    margin-bottom: 2px;
+    color: #374151;
+}
+
+.modal-field input,
+.modal-field select {
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid #d1d5db;
+    font-size: 13px;
+}
+
+.modal-field input:focus,
+.modal-field select:focus {
+    outline: none;
+    border-color: #06b6d4;
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.25);
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 6px;
+}
+
+.btn-primary,
+.btn-secondary {
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: none;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.btn-primary {
+    background: #06b6d4;
+    color: #ecfeff;
+}
+
+.btn-secondary {
+    background: #e5e7eb;
+    color: #374151;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+    .layout {
+        flex-direction: column;
+    }
+
+    .content-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+
+/* ================= MODERN SIDEBAR MENU ================= */
+
+.menu {
+    list-style: none;
+    margin-top: 8px;
+}
+
+/* MENU LINK */
+.menu a {
+    position: relative;
+    display: flex;
+    align-items: center;
+    padding: 11px 14px;
+    border-radius: 12px;
+    text-decoration: none;
+    color: #cfd6ff;
+    font-size: 14px;
+
+    transition:
+        background 0.2s ease,
+        transform 0.18s ease,
+        box-shadow 0.2s ease;
+}
+
+/* HOVER */
+.menu a:hover {
+    background: rgba(255, 255, 255, 0.06);
+    transform: translateX(4px);
+}
+
+/* ACTIVE */
+.menu a.active {
+    background: linear-gradient(90deg,
+            rgba(154, 91, 255, 0.22),
+            rgba(77, 167, 255, 0.08));
+    box-shadow: 0 0 16px rgba(154, 91, 255, 0.25);
+    color: #ffffff;
+}
+
+/* ACTIVE GRADIENT LINE */
+.menu a.active::before {
+    content: "";
+    position: absolute;
+    left: -20px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 4px;
+    height: 60%;
+    border-radius: 6px;
+    background: linear-gradient(180deg,
+            #FF4FB6,
+            #9A5BFF,
+            #4DA7FF);
+}
+
+/* ================= CALENDAR IMPROVEMENTS ================= */
+
+/* EVENTS SECTIONS */
+.events-section {
+    margin-bottom: 20px;
+}
+
+.events-section:last-child {
+    margin-bottom: 0;
+}
+
+.past-section .side-title {
+    color: #64748b;
+}
+
+/* HAS MEETING DAY */
+.day.has-meeting {
+    background: linear-gradient(135deg, #dbeafe, #e0e7ff);
+}
+
+/* EVENT ITEM PAST */
+.event-item.past {
+    background: #f1f5f9;
+    opacity: 0.8;
+}
+
+.event-item.past .event-date {
+    background: #64748b;
+}
+
+.event-item.past .event-name {
+    color: #64748b;
+}
+
+/* EMPTY STATE */
+.event-empty {
+    font-size: 13px;
+    color: #94a3b8;
+    text-align: center;
+    padding: 12px;
+}
+
+/* SIDE CARD SCROLLABLE */
+.side-card {
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+/* SCROLLBAR STYLING */
+.side-card::-webkit-scrollbar {
+    width: 6px;
+}
+
+.side-card::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 3px;
+}
+
+.side-card::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 3px;
+}
+
+.side-card::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}

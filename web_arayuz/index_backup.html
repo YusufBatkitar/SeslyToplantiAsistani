@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Toplantı Botu Paneli · SESLY</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="assets/css/index.css?v=3">
+    <link rel="stylesheet" href="assets/css/shared-table.css?v=1">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        // ✅ Supabase Ayarları (Login.html ile aynı olmalı)
+        const SUPABASE_URL = "{{ SUPABASE_URL }}";
+        const SUPABASE_ANON_KEY = "{{ SUPABASE_ANON_KEY }}";
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    </script>
+</head>
+
+<body>
+    <div class="layout">
+        <!-- SOL MENÜ -->
+        <aside class="sidebar">
+            <div class="logo">
+                SESLY
+            </div>
+            <ul class="menu">
+                <li><a href="/admin" class="active">Dashboard</a></li>
+                <li><a href="/meetings">Toplantılar</a></li>
+                <li><a href="/calendar">Takvim</a></li>
+                <li><a href="/profile">Profil</a></li>
+                <li><a href="#" id="logoutBtn">Çıkış</a></li>
+            </ul>
+            <div class="sidebar-footer">
+                © 2025 Sesly · Toplantı Botu
+            </div>
+        </aside>
+
+        <!-- ANA ALAN -->
+        <main class="main">
+            <header class="main-header">
+                <div>
+                    <h1>Toplantı Botu Kontrol Paneli</h1>
+                    <div class="badge">
+                        • Beta sürüm · Lokal test (bu bilgisayarda)
+                    </div>
+                </div>
+                <div class="user-pill" id="userInfoDisplay">
+                    👤 Yükleniyor...
+                </div>
+            </header>
+
+            <section class="grid">
+                <!-- FORM KARTI -->
+                <div class="card">
+                    <div class="card-title">Yeni Toplantı Başlat</div>
+                    <div class="card-sub">
+                        Platformu ve toplantı linkini gir, bu bilgisayardaki SESLY botu otomatik katılsın.
+                    </div>
+
+                    <form onsubmit="return false;">
+                        <div class="form-row">
+                            <div style="flex: 1;">
+                                <label for="platform">Platform</label>
+                                <select id="platform">
+                                    <option value="zoom">Zoom</option>
+                                    <option value="teams" selected>Microsoft Teams</option>
+                                    <option value="meet">Google Meet</option>
+                                </select>
+                                <small style="font-size: 11px; color: #888;">
+                                    Zoom / Teams / Meet destekleniyor.
+                                </small>
+                            </div>
+                            <div style="flex: 2;">
+                                <label for="link">Toplantı Linki</label>
+                                <input type="url" id="link" placeholder="Toplantı linkini buraya yapıştır" />
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div style="flex: 1;">
+                                <label for="password">Toplantı Şifresi (Sadece Zoom)</label>
+                                <input type="text" id="password" placeholder="Varsa şifreyi girin (Opsiyonel)" />
+                            </div>
+                            <div style="flex: 2;">
+                                <label for="title">Toplantı Adı (opsiyonel)</label>
+                                <input type="text" id="title" placeholder="Örn: Haftalık durum toplantısı" />
+                            </div>
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-primary" id="startBotBtn"
+                                style="gap:8px; padding-left:24px; padding-right:24px; text-transform:uppercase; letter-spacing:0.5px; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3);">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
+                                    fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                    stroke-linejoin="round">
+                                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                                </svg>
+                                BOTU BAŞLAT
+                            </button>
+                            <button type="button" class="btn btn-ghost" id="stopBotBtn"
+                                style="display:none; background:#dc3545; color:white;">
+                                🛑 Botu Durdur
+                            </button>
+                        </div>
+
+                        <!-- DURUM MESAJI -->
+                        <p id="status" style="margin-top: 8px; font-size: 13px; color: #555;"></p>
+
+                        <!-- BOT DURUM GÖSTERGESİ -->
+                        <div id="botStatusCard"
+                            style="display:none; margin-top:16px; padding:12px; background:#f0f9ff; border-left:4px solid #0ea5e9; border-radius:6px;">
+                            <div style="font-weight:600; font-size:14px; color:#0c4a6e; margin-bottom:4px;">🤖 Bot Aktif
+                            </div>
+                            <div id="botStatusText" style="font-size:12px; color:#075985;"></div>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- RAPORLAR KARTI -->
+                <div class="card">
+                    <div class="card-title">📄 Raporlar</div>
+                    <div class="card-sub">
+                        Toplantı raporları ve transkriptler
+                    </div>
+
+                    <!-- RAPOR LİSTESİ -->
+                    <div style="margin-top: 16px;">
+                        <div style="font-weight: 600; font-size: 14px; margin-bottom: 8px;">Son Rapor:</div>
+                        <div id="latestReport"
+                            style="padding: 12px; background: #f8f9fa; border-radius: 6px; font-size: 13px;">
+                            <span style="color: #888;">Henüz rapor oluşturulmadı</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ALT KISIM: GEÇMİŞ TOPLANTILAR -->
+            <section class="card">
+                <div class="card-title-row">
+                    <h2 class="card-title">Toplantı Listesi</h2>
+                    <span class="pill pill-small" id="meetingsCount">Yükleniyor...</span>
+                </div>
+
+                <div class="table-wrapper">
+                    <table style="width: 100%; min-width: 800px;">
+                        <thead>
+                            <tr>
+                                <th style="width: 25%;">Ad</th>
+                                <th style="width: 10%;">Platform</th>
+                                <th style="width: 15%;">Tarih</th>
+                                <th style="width: 10%;">Saat</th>
+                                <th style="width: 10%;">Durum</th>
+                                <th style="width: 30%;">İşlemler</th>
+                            </tr>
+                        </thead>
+                        <tbody id="historyBody">
+                            <tr>
+                                <td colspan="6" style="text-align:center; font-size: 13px; color:#777;">
+                                    Henüz kayıtlı toplantı yok.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- JS KISMI -->
+    <script>
+        const API_URL = "/start-bot"; // Relative path (cors fix)
+        const BOT_STATUS_URL = "/bot-status";
+        const BOT_COMMAND_URL = "/bot-command";
+        const SECRET_TOKEN = "123456789";
+
+        // Element Referansları
+        const startBtn = document.getElementById("startBotBtn");
+        const stopBtn = document.getElementById("stopBotBtn");
+        const testBtn = document.getElementById("testBtn");
+        const statusEl = document.getElementById("status");
+        const botStatusCard = document.getElementById("botStatusCard");
+        const botStatusText = document.getElementById("botStatusText");
+        const userInfoDisplay = document.getElementById("userInfoDisplay");
+        const logoutBtn = document.getElementById("logoutBtn");
+
+        let statusCheckInterval = null;
+
+        function setStatus(text, color = "#555") {
+            statusEl.textContent = text;
+            statusEl.style.color = color;
+        }
+
+        // ==========================================
+        // 1. KULLANICI YÜKLEME (Profil Sayfası Mantığı)
+        // ==========================================
+        async function loadUserSession() {
+            try {
+                console.log("[INIT] Kullanıcı oturumu kontrol ediliyor...");
+                const { data: { session }, error } = await supabaseClient.auth.getSession();
+
+                if (error) {
+                    console.error("[AUTH ERROR]", error);
+                    userInfoDisplay.textContent = "⚠️ Oturum Hatası";
+                    return;
+                }
+
+                if (!session) {
+                    console.warn("[AUTH] Oturum yok, misafir modu.");
+                    userInfoDisplay.textContent = "👤 Misafir (Giriş Yapılmadı)";
+                    document.getElementById("historyBody").innerHTML = "<tr><td colspan='6' style='text-align:center; padding:12px;'>Giriş yapmadığınız için geçmiş toplantılar görüntülenemiyor.</td></tr>";
+                    return;
+                }
+
+                // Oturum var: Profil detayını çek
+                const userId = session.user.id;
+                console.log("[AUTH] User ID:", userId);
+
+                // UI Update (Fallback)
+                const emailName = session.user.email.split("@")[0];
+                userInfoDisplay.textContent = `👤 ${emailName} (Yükleniyor...)`;
+
+                // Profil tablosundan isim çek
+                const { data: profile, error: profileError } = await supabaseClient
+                    .from('profiles')
+                    .select('full_name')
+                    .eq('id', userId)
+                    .maybeSingle();
+
+                const displayName = profile?.full_name || emailName;
+                userInfoDisplay.textContent = `👤 ${displayName} (${userId.slice(0, 5)})`;
+
+                // Toplantıları Çek
+                loadLast5Meetings(userId);
+
+            } catch (err) {
+                console.error("[CRITICAL] loadUserSession hatası:", err);
+                userInfoDisplay.textContent = "❌ Yükleme Hatası";
+                alert("Kullanıcı verisi yüklenirken hata oluştu: " + err.message);
+            }
+        }
+
+        // ==========================================
+        // YARDIMCI: DOSYA İNDİRME 
+        // ==========================================
+        async function downloadFile(url, fileName) {
+            try {
+                document.body.style.cursor = 'wait';
+                const res = await fetch(url);
+                if (!res.ok) throw new Error("Dosya indirilemedi");
+
+                const blob = await res.blob();
+                const blobUrl = window.URL.createObjectURL(blob);
+
+                const a = document.createElement('a');
+                a.href = blobUrl;
+                a.download = fileName;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(blobUrl);
+                document.body.style.cursor = 'default';
+
+            } catch (err) {
+                document.body.style.cursor = 'default';
+                console.error("İndirme hatası:", err);
+                alert("İndirme başlatılamadı, dosya yeni sekmede açılıyor.");
+                window.open(url, "_blank");
+            }
+        }
+
+        // ==========================================
+        // 2. TOPLANTI GEÇMİŞİ
+        // ==========================================
+        async function loadLast5Meetings(userId) {
+            console.log("[DB] Toplantılar çekiliyor...");
+            const tbody = document.getElementById("historyBody");
+
+            try {
+                const { data: meetings, error } = await supabaseClient
+                    .from('meetings')
+                    .select('*')
+                    .eq('user_id', userId)
+                    .order('created_at', { ascending: false })
+                    .limit(5);
+
+                if (error) throw error;
+
+                if (meetings && meetings.length > 0) {
+                    tbody.innerHTML = "";
+                    document.getElementById("meetingsCount").textContent = `${meetings.length} kayıt`;
+
+                    // Icons
+                    const iconReport = `<svg xmlns="http://www.w3.org/2000/svg" class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>`;
+                    const iconTxt = `<svg xmlns="http://www.w3.org/2000/svg" class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>`;
+                    const iconDownload = `<svg xmlns="http://www.w3.org/2000/svg" class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`;
+
+                    meetings.forEach(m => {
+                        const dateObj = new Date(m.start_time);
+                        const dateStr = dateObj.toLocaleDateString("tr-TR");
+                        const timeStr = dateObj.toLocaleTimeString("tr-TR", { hour: '2-digit', minute: '2-digit' });
+                        const safeTitle = (m.title || "Toplanti").replace(/[^a-zA-Z0-9çğıöşüÇĞİÖŞÜ]/g, "_");
+
+                        // Durum Badge
+                        let statusBadge = `<span class="badge ${m.status}">${m.status}</span>`;
+                        if (m.status === 'completed') statusBadge = '<span class="status-badge done">Tamamlandı</span>';
+
+                        // Actions
+                        let actions = `<div style="display:flex; gap:10px;">`;
+
+                        if (m.report_path) {
+                            actions += `
+                                <div class="action-group">
+                                    <a href="${m.report_path}" target="_blank" class="btn-action primary" title="Raporu Görüntüle">
+                                       ${iconReport} Rapor
+                                    </a>
+                                    <div class="divider"></div>
+                                    <button onclick="downloadFile('${m.report_path}', '${safeTitle}_Rapor.html')" class="btn-icon" title="İndir">
+                                       ${iconDownload}
+                                    </button>
+                                </div>`;
+                        }
+
+                        if (m.transcript_path) {
+                            actions += `
+                                <div class="action-group">
+                                    <a href="${m.transcript_path}" target="_blank" class="btn-action secondary" title="Transkripti Görüntüle">
+                                       ${iconTxt} Transkript
+                                    </a>
+                                    <div class="divider"></div>
+                                    <button onclick="downloadFile('${m.transcript_path}', '${safeTitle}_Transkript.txt')" class="btn-icon" title="İndir">
+                                       ${iconDownload}
+                                    </button>
+                                </div>`;
+                        }
+                        actions += `</div>`;
+
+                        const row = `
+                                <tr>
+                                    <td style="font-weight:500;">${m.title || "İsimsiz Toplantı"}</td>
+                                    <td><span class="tag">${m.platform}</span></td>
+                                    <td>${dateStr}</td>
+                                    <td>${timeStr}</td>
+                                    <td>${statusBadge}</td>
+                                    <td>${actions}</td>
+                                </tr>
+                            `;
+                        tbody.innerHTML += row;
+                    });
+                } else {
+                    document.getElementById("meetingsCount").textContent = "0 kayıt";
+                    tbody.innerHTML = "<tr><td colspan='6' style='text-align:center; padding:12px; color:#888'>Henüz kayıtlı toplantı yok.</td></tr>";
+                }
+            } catch (err) {
+                console.error("[DB ERROR]", err);
+                tbody.innerHTML = `<tr><td colspan='6' style='text-align:center; color:red;'>Veri çekme hatası: ${err.message}</td></tr>`;
+            }
+        }
+
+        // ==========================================
+        // 3. BOT DURUM KONTROLÜ
+        // ==========================================
+        async function checkBotStatus() {
+            try {
+                const res = await fetch(BOT_STATUS_URL);
+                const data = await res.json();
+
+                if (data.task && data.task.active) {
+                    startBtn.style.display = "none";
+                    stopBtn.style.display = "inline-block";
+                    botStatusCard.style.display = "block";
+
+                    const platform = data.task.platform || "Unknown";
+                    let workerStatus = data.worker?.status_message || "Çalışıyor...";
+                    const recording = data.worker?.recording ? "📹 Kayıt" : "⏸️ Durdu";
+
+                    botStatusText.innerHTML = `<b>Platform:</b> ${platform.toUpperCase()}<br><b>Durum:</b> ${workerStatus}<br><b>Kayıt:</b> ${recording}`;
+
+                    if (statusCheckInterval) clearInterval(statusCheckInterval);
+                    statusCheckInterval = setInterval(checkBotStatus, 3000);
+                } else {
+                    startBtn.style.display = "inline-block";
+                    stopBtn.style.display = "none";
+                    botStatusCard.style.display = "none";
+
+                    if (statusCheckInterval) clearInterval(statusCheckInterval);
+                    statusCheckInterval = setInterval(checkBotStatus, 5000);
+                }
+            } catch (err) {
+                console.error("[BOT STATUS] Kontrol hatası:", err);
+            }
+        }
+
+        // ==========================================
+        // 4. BUTON AKSİYONLARI
+        // ==========================================
+        startBtn.addEventListener("click", async () => {
+            const platform = document.getElementById("platform").value;
+            const meetingUrl = document.getElementById("link").value.trim();
+            const title = document.getElementById("title").value.trim();
+            const password = document.getElementById("password").value.trim(); // YENI: Şifre
+
+            if (!meetingUrl) return setStatus("⚠ Link gerekli.", "red");
+
+            setStatus("⏳ Başlatılıyor...", "#555");
+
+            try {
+                const { data: { session } } = await supabaseClient.auth.getSession();
+                if (!session) {
+                    alert("Botu başlatmak için giriş yapmalısınız.");
+                    window.location.href = "/login";
+                    return;
+                }
+
+                const res = await fetch(API_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        token: SECRET_TOKEN,
+                        platform,
+                        meeting_url: meetingUrl,
+                        password: password, // YENI: backend'e gönder
+                        title,
+                        user_id: session.user.id
+                    }),
+                });
+
+                const data = await res.json();
+                if (data.ok) {
+                    setStatus("✅ Bot yönlendirildi!", "green");
+                    setTimeout(checkBotStatus, 1500);
+                } else {
+                    setStatus("❌ Hata: " + data.error, "red");
+                }
+            } catch (err) {
+                setStatus("❌ Bağlantı hatası", "red");
+                console.error(err);
+            }
+        });
+
+        stopBtn.addEventListener("click", async () => {
+            if (!confirm("Botu durdurmak istiyor musunuz?")) return;
+            try {
+                await fetch(BOT_COMMAND_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ command: "stop" }),
+                });
+                setStatus("✅ Durdurma komutu gönderildi.", "green");
+                setTimeout(checkBotStatus, 1000);
+            } catch (err) {
+                alert("Hata: " + err.message);
+            }
+        });
+
+        if (logoutBtn) {
+            logoutBtn.addEventListener("click", async (e) => {
+                e.preventDefault();
+                await supabaseClient.auth.signOut();
+                window.location.href = "/login";
+            });
+        }
+
+        async function checkLatestReport() {
+            try {
+                const res = await fetch('/latest-pdf');
+                const data = await res.json();
+                const reportEl = document.getElementById('latestReport');
+
+                if (data.ok && data.pdf_path) {
+                    const fileName = data.pdf_path.split('\\').pop();
+                    const reportPath = '/reports/' + fileName;
+                    reportEl.innerHTML = `<a href="${reportPath}" target="_blank" class="btn btn-primary" style="font-size:12px;width:100%;text-align:center;">📄 Son Raporu Görüntüle</a>`;
+                }
+            } catch (e) { }
+        }
+
+        // ==========================================
+        // BAŞLANGIÇ
+        // ==========================================
+        // Sayfa yüklendiğinde çalışacaklar
+        loadUserSession();   // 1. Kullanıcıyı yükle
+        checkBotStatus();    // 2. Bot durumunu kontrol et
+        checkLatestReport(); // 3. Rapor kontrolü
+        setInterval(checkLatestReport, 10000);
+
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Kullanıcı Paneli · Toplantılarım</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="assets/css/user-dashboard.css">
+</head>
+
+<body>
+
+    <div class="layout">
+        <!-- SOL MENÜ (sadece bu panele özel) -->
+        <aside class="sidebar">
+            <div class="logo">SESLY</div>
+            <ul class="menu">
+                <li><a href="/dashboard" class="active">Toplantılarım</a></li>
+                <li><a href="/profile">Profil</a></li>
+                <li><a href="#">Çıkış</a></li>
+            </ul>
+            <div class="sidebar-footer">
+                © 2025 Sesly
+            </div>
+        </aside>
+
+        <!-- ANA ALAN -->
+        <main class="main">
+            <!-- ÜST: başlık + profil -->
+            <header class="main-header">
+                <div>
+                    <h1>Toplantılarım</h1>
+                    <p class="header-sub">
+                        Platformlara geçiş yap ve katıldığın toplantıların özetlerini görüntüle.
+                    </p>
+                </div>
+
+                <div class="profile-card">
+                    <div class="avatar">HC</div>
+                    <div class="profile-info">
+                        <div class="profile-name">Hasan Can</div>
+                        <div class="profile-email">kullanici@mail.com</div>
+                        <div class="profile-role">Katılımcı</div>
+                    </div>
+                </div>
+            </header>
+
+            <!-- PLATFORM BUTONLARI -->
+            <section class="card">
+                <h2 class="card-title">Toplantı Platformları</h2>
+                <p class="card-sub">
+                    Bu panelde bot kontrolü yok. Aşağıdaki butonlar seni platformların kendi sayfasına götürür.
+                </p>
+
+                <div class="platform-grid">
+                    <a class="platform-btn zoom" href="https://zoom.us" target="_blank">
+                        <span class="platform-title">Zoom</span>
+                        <span class="platform-desc">Zoom üzerinden toplantılarına katıl.</span>
+                    </a>
+                    <a class="platform-btn teams" href="https://teams.microsoft.com" target="_blank">
+                        <span class="platform-title">Microsoft Teams</span>
+                        <span class="platform-desc">Teams ile ekip toplantılarını yönet.</span>
+                    </a>
+                    <a class="platform-btn meet" href="https://meet.google.com" target="_blank">
+                        <span class="platform-title">Google Meet</span>
+                        <span class="platform-desc">Google hesabınla hızlı görüşmeler yap.</span>
+                    </a>
+                </div>
+            </section>
+
+            <!-- KATILDIĞI TOPLANTILAR -->
+            <section class="card">
+                <h2 class="card-title">Katıldığım Toplantılar</h2>
+                <p class="card-sub">
+                    Örnek kayıtlar. Gerçekte backend’den gelecek ve her satır detay sayfasına yönlendirecek.
+                </p>
+
+                <table class="meetings-table">
+                    <thead>
+                        <tr>
+                            <th>Ad</th>
+                            <th>Platform</th>
+                            <th>Tarih</th>
+                            <th>Süre</th>
+                            <th>Özet</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Proje Durum Toplantısı</td>
+                            <td>Zoom</td>
+                            <td>28.11.2025 21:00</td>
+                            <td>45 dk</td>
+                            <td><a class="link-detail" href="/meeting-detail">Özeti Gör</a></td>
+                        </tr>
+                        <tr>
+                            <td>Müşteri Demo</td>
+                            <td>Microsoft Teams</td>
+                            <td>26.11.2025 14:30</td>
+                            <td>30 dk</td>
+                            <td><a class="link-detail" href="/meeting-detail">Özeti Gör</a></td>
+                        </tr>
+                        <tr>
+                            <td>İç Ekip Toplantısı</td>
+                            <td>Google Meet</td>
+                            <td>24.11.2025 19:00</td>
+                            <td>60 dk</td>
+                            <td><a class="link-detail" href="/meeting-detail">Özeti Gör</a></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+        </main>
+    </div>
+
+</body>
+
+</html>

@@ -1,0 +1,265 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: system-ui, sans-serif;
+    background: #eef2ff;
+    color: #111827;
+}
+
+.layout {
+    display: flex;
+    min-height: 100vh;
+}
+
+/* SIDEBAR */
+.sidebar {
+    width: 240px;
+    background: #020617;
+    padding: 24px 20px;
+    display: flex;
+    flex-direction: column;
+    color: #e5e7eb;
+}
+.logo{
+  font-family: "Poppins", "Montserrat", "Segoe UI", Arial, sans-serif;
+  font-weight: 500;           /* biraz ince */
+  font-size: 35px;
+  letter-spacing: 0.06em;
+
+  background: linear-gradient(90deg,
+    #FF4FB6 0%,
+    #9A5BFF 45%,
+    #4DA7FF 100%
+  );
+
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent; /* Chrome/Safari */
+  color: transparent;                  /* diğerleri */
+}
+.logo span {
+    color: #6366f1;
+}
+.menu {
+    list-style: none;
+}
+.menu li {
+    margin-bottom: 10px;
+}
+.menu a {
+    display: block;
+    text-decoration: none;
+    font-size: 14px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    color: #e5e7eb;
+    transition: background .15s ease, transform .15s ease;
+}
+.menu a.active,
+.menu a:hover {
+    background: #1e293b;
+    transform: translateX(2px);
+}
+.sidebar-footer {
+    margin-top: auto;
+    font-size: 12px;
+    opacity: .6;
+    margin-top: auto;
+}
+
+/* MAIN AREA */
+.main {
+    flex: 1;
+    padding: 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+/* Profiiil Üst */
+.profile-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+.avatar-big {
+    width: 62px;
+    height: 62px;
+    border-radius: 999px;
+    background: #4f46e5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    color: #fff;
+    font-size: 22px;
+}
+.profile-name {
+    font-size: 22px;
+    font-weight: 700;
+}
+.profile-role {
+    font-size: 13px;
+    color: #64748b;
+}
+
+/* CARDS */
+.card {
+    background: #fafafa;
+    padding: 20px;
+    border-radius: 18px;
+    box-shadow: 0 12px 35px rgba(15,23,42,0.15);
+}
+.card.danger {
+    border-left: 4px solid #dc2626;
+}
+.title {
+    font-size: 17px;
+    font-weight: 600;
+    margin-bottom: 12px;
+}
+.sub {
+    color: #64748b;
+    font-size: 12px;
+}
+
+/* FORM */
+.profile-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+label {
+    font-size: 13px;
+}
+input {
+    padding: 10px;
+    border-radius: 12px;
+    border: 1px solid #cbd5e1;
+    font-size: 14px;
+    outline: none;
+}
+input:focus {
+    border-color: #4f46e5;
+    box-shadow: 0 0 0 2px rgba(79,70,229,0.25);
+}
+
+/* Butonlar */
+.btn-save {
+    margin-top: 12px;
+    background: #4f46e5;
+    color: #fff;
+    font-weight: 600;
+    padding: 10px;
+    border-radius: 999px;
+    border: none;
+    cursor: pointer;
+}
+.btn-save:hover {
+    background: #4338ca;
+}
+
+.btn-delete-account {
+    margin-top: 10px;
+    width: fit-content;
+    background: #dc2626;
+    color: #fff;
+    padding: 10px 18px;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: 999px;
+    border: none;
+    cursor: pointer;
+}
+.btn-delete-account:hover {
+    background: #b91c1c;
+}
+
+/* RESPONSIVE */
+@media (max-width: 900px) {
+    .layout {
+        flex-direction: column;
+    }
+    .main {
+        padding: 20px;
+    }
+    .sidebar {
+        width: 100%;
+        flex-direction: row;
+        gap: 10px;
+        justify-content: space-between;
+        align-items: center;
+    }
+}
+
+
+
+.menu {
+  list-style: none;
+  margin-top: 8px;
+}
+
+/* MENU LINK */
+.menu a {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 11px 14px;
+  border-radius: 12px;
+  text-decoration: none;
+  color: #cfd6ff;
+  font-size: 14px;
+
+  transition: 
+    background 0.2s ease,
+    transform 0.18s ease,
+    box-shadow 0.2s ease;
+}
+
+/* HOVER */
+.menu a:hover {
+  background: rgba(255,255,255,0.06);
+  transform: translateX(4px);
+}
+
+/* ACTIVE */
+.menu a.active {
+  background: linear-gradient(
+    90deg,
+    rgba(154,91,255,0.22),
+    rgba(77,167,255,0.08)
+  );
+  box-shadow: 0 0 16px rgba(154,91,255,0.25);
+  color: #ffffff;
+}
+
+/* ACTIVE GRADIENT LINE */
+.menu a.active::before {
+  content: "";
+  position: absolute;
+  left: -20px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 4px;
+  height: 60%;
+  border-radius: 6px;
+  background: linear-gradient(
+    180deg,
+    #FF4FB6,
+    #9A5BFF,
+    #4DA7FF
+  );
+}
+
+
+
+.logo {
+  margin-bottom: 32px;   /* logo biraz nefes alsın */
+}
+.menu .item {
+  margin-bottom: 10px;  /* menüler de sıkışmasın */
+}

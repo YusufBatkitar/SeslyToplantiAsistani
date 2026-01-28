@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Takvim · Toplantı Botu Paneli</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="assets/css/calendar.css">
+    <!-- Supabase JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        const SUPABASE_URL = "{{ SUPABASE_URL }}";
+        const SUPABASE_ANON_KEY = "{{ SUPABASE_ANON_KEY }}";
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    </script>
+</head>
+
+<body>
+
+    <div class="layout">
+        <!-- Sol Menü -->
+        <aside class="sidebar">
+            <div class="logo">SESLY</div>
+            <ul class="menu">
+                <li><a href="/admin">Dashboard</a></li>
+                <li><a href="/meetings">Toplantılar</a></li>
+                <li><a href="/calendar" class="active">Takvim</a></li>
+                <li><a href="/profile">Profil</a></li>
+                <li><a href="#" id="logoutBtn">Çıkış</a></li>
+            </ul>
+            <div class="sidebar-footer">© 2025 Sesly</div>
+        </aside>
+
+        <!-- Ana İçerik -->
+        <main class="main">
+            <header class="main-header">
+                <h1>Takvim</h1>
+                <p class="header-sub">Geçmiş ve yaklaşan toplantılarını takvimde görüntüle.</p>
+            </header>
+
+            <section class="content-grid">
+                <!-- Takvim Kartı -->
+                <div class="card calendar-card">
+                    <div class="calendar-header">
+                        <button id="prevMonth" class="nav-btn">⬅</button>
+                        <div>
+                            <div class="month-label" id="monthLabel"></div>
+                            <div class="month-sub">Ay ve yıl dinamik hesaplanıyor</div>
+                        </div>
+                        <button id="nextMonth" class="nav-btn">⮕</button>
+                    </div>
+
+                    <!-- Gün isimleri -->
+                    <div class="calendar-grid calendar-head">
+                        <div class="day-name">Pzt</div>
+                        <div class="day-name">Sal</div>
+                        <div class="day-name">Çar</div>
+                        <div class="day-name">Per</div>
+                        <div class="day-name">Cum</div>
+                        <div class="day-name">Cmt</div>
+                        <div class="day-name">Paz</div>
+                    </div>
+
+                    <!-- Günler JS ile doldurulacak -->
+                    <div class="calendar-grid" id="calendarDays"></div>
+                </div>
+
+                <!-- Sağ Etkinlik Paneli -->
+                <aside class="card side-card">
+                    <!-- Yaklaşan Toplantılar -->
+                    <div class="events-section">
+                        <h2 class="side-title">📅 Yaklaşan Toplantılar</h2>
+                        <ul class="events-list" id="upcomingEventsList">
+                            <li class="event-empty">Yükleniyor...</li>
+                        </ul>
+                    </div>
+
+                    <!-- Geçmiş Toplantılar -->
+                    <div class="events-section past-section">
+                        <h2 class="side-title">📋 Geçmiş Toplantılar</h2>
+                        <ul class="events-list" id="pastEventsList">
+                            <li class="event-empty">Yükleniyor...</li>
+                        </ul>
+                    </div>
+                </aside>
+            </section>
+        </main>
+    </div>
+
+    <!-- ⭐ ÖZEL POPUP (MODAL) ⭐ -->
+    <div id="eventModal" class="modal-backdrop">
+        <div class="modal">
+            <h3 class="modal-title">Yeni Toplantı</h3>
+            <p class="modal-sub" id="modalDateText">Tarih: </p>
+
+            <form id="eventForm" class="modal-form">
+                <div class="modal-field">
+                    <label for="eventTitle">Toplantı başlığı</label>
+                    <input id="eventTitle" type="text" placeholder="Örn: Proje durum">
+                </div>
+
+                <div class="modal-field">
+                    <label for="eventPlatform">Platform</label>
+                    <select id="eventPlatform">
+                        <option value="Zoom">Zoom</option>
+                        <option value="Teams">Microsoft Teams</option>
+                        <option value="Meet">Google Meet</option>
+                    </select>
+                </div>
+
+                <div class="modal-field">
+                    <label for="eventTime">Saat</label>
+                    <input id="eventTime" type="time" value="09:00">
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" id="eventCancel" class="btn-secondary">Vazgeç</button>
+                    <button type="submit" class="btn-primary">Kaydet</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const aylar = [
+            "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
+            "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"
+        ];
+
+        let current = new Date();
+        current.setDate(1);
+
+        let allMeetings = []; // DB'den çekilecek
+
+        const monthLabel = document.getElementById("monthLabel");
+        const calendarDays = document.getElementById("calendarDays");
+        const upcomingList = document.getElementById("upcomingEventsList");
+        const pastList = document.getElementById("pastEventsList");
+
+        // Modal elementleri
+        const modal = document.getElementById("eventModal");
+        const eventForm = document.getElementById("eventForm");
+        const eventTitleInp = document.getElementById("eventTitle");
+        const eventPlatSel = document.getElementById("eventPlatform");
+        const eventTimeInp = document.getElementById("eventTime");
+        const modalDateText = document.getElementById("modalDateText");
+        const cancelBtn = document.getElementById("eventCancel");
+
+        let selectedMeta = null;
+
+        // ==========================================
+        // SAYFA YÜKLEME
+        // ==========================================
+        async function initCalendar() {
+            try {
+                const { data: { session } } = await supabaseClient.auth.getSession();
+                if (!session) {
+                    window.location.href = "/login";
+                    return;
+                }
+
+                // Toplantıları çek
+                const { data: meetings, error } = await supabaseClient
+                    .from('meetings')
+                    .select('*')
+                    .eq('user_id', session.user.id)
+                    .order('start_time', { ascending: false });
+
+                if (error) throw error;
+
+                allMeetings = meetings || [];
+                console.log("[CALENDAR] Toplantılar yüklendi:", allMeetings.length);
+
+                renderCalendar();
+                renderMeetingLists();
+
+            } catch (err) {
+                console.error("[CALENDAR] Hata:", err);
+            }
+        }
+
+        // ==========================================
+        // TAKVİM RENDER
+        // ==========================================
+        function renderCalendar() {
+            calendarDays.innerHTML = "";
+
+            const year = current.getFullYear();
+            const month = current.getMonth();
+
+            monthLabel.textContent = `${aylar[month]} ${year}`;
+
+            const today = new Date();
+            const firstDayIndexRaw = current.getDay();
+            const firstDayIndex = (firstDayIndexRaw + 6) % 7;
+            const lastDay = new Date(year, month + 1, 0).getDate();
+
+            // Bu aydaki toplantıları bul
+            const thisMonthMeetings = allMeetings.filter(m => {
+                const d = new Date(m.start_time);
+                return d.getMonth() === month && d.getFullYear() === year;
+            });
+
+            // Gün bazında grupla
+            const meetingsByDay = {};
+            thisMonthMeetings.forEach(m => {
+                const d = new Date(m.start_time).getDate();
+                if (!meetingsByDay[d]) meetingsByDay[d] = [];
+                meetingsByDay[d].push(m);
+            });
+
+            // Boş hücreler
+            for (let i = 0; i < firstDayIndex; i++) {
+                const empty = document.createElement("div");
+                empty.className = "day empty";
+                calendarDays.appendChild(empty);
+            }
+
+            // Günler
+            for (let d = 1; d <= lastDay; d++) {
+                const dayEl = document.createElement("div");
+                dayEl.className = "day";
+                dayEl.textContent = d;
+
+                // Bugün ise
+                if (d === today.getDate() && month === today.getMonth() && year === today.getFullYear()) {
+                    dayEl.classList.add("today");
+                }
+
+                // Bu günde toplantı var mı?
+                if (meetingsByDay[d]) {
+                    const meetings = meetingsByDay[d];
+                    dayEl.classList.add("has-meeting");
+
+                    // Platform rengi
+                    const platforms = meetings.map(m => (m.platform || '').toLowerCase());
+                    if (platforms.includes('zoom')) dayEl.classList.add("zoom");
+                    else if (platforms.includes('teams')) dayEl.classList.add("teams");
+                    else if (platforms.includes('meet')) dayEl.classList.add("meet");
+
+                    // Badge
+                    const badge = document.createElement("span");
+                    badge.className = "badge";
+                    badge.textContent = meetings.length > 1 ? `${meetings.length} toplantı` : meetings[0].title?.slice(0, 10) || "Toplantı";
+                    dayEl.appendChild(badge);
+                }
+
+                dayEl.addEventListener("click", () => onDayClick(dayEl, d, month, year));
+                calendarDays.appendChild(dayEl);
+            }
+        }
+
+        // ==========================================
+        // TOPLANTI LİSTELERİ
+        // ==========================================
+        function renderMeetingLists() {
+            const now = new Date();
+
+            const upcoming = allMeetings.filter(m => new Date(m.start_time) >= now).slice(0, 5);
+            const past = allMeetings.filter(m => new Date(m.start_time) < now).slice(0, 10);
+
+            // Yaklaşan
+            if (upcoming.length === 0) {
+                upcomingList.innerHTML = '<li class="event-empty">Yaklaşan toplantı yok.</li>';
+            } else {
+                upcomingList.innerHTML = upcoming.map(m => renderEventItem(m, 'upcoming')).join('');
+            }
+
+            // Geçmiş
+            if (past.length === 0) {
+                pastList.innerHTML = '<li class="event-empty">Geçmiş toplantı yok.</li>';
+            } else {
+                pastList.innerHTML = past.map(m => renderEventItem(m, 'past')).join('');
+            }
+        }
+
+        function renderEventItem(m, type) {
+            const date = new Date(m.start_time);
+            const day = date.getDate();
+            const monthName = aylar[date.getMonth()].slice(0, 3);
+            const time = date.toLocaleTimeString("tr-TR", { hour: '2-digit', minute: '2-digit' });
+            const platform = m.platform || "Zoom";
+            const title = m.title || "İsimsiz Toplantı";
+            const statusClass = type === 'past' ? 'past' : '';
+
+            return `
+                <li class="event-item ${statusClass}">
+                    <div class="event-date">
+                        <span class="event-day">${day}</span>
+                        <span class="event-month">${monthName}</span>
+                    </div>
+                    <div class="event-info">
+                        <span class="event-name">${title}</span>
+                        <span class="event-meta">${platform} · ${time}</span>
+                    </div>
+                </li>
+            `;
+        }
+
+        // ==========================================
+        // GÜN TIKLAMA (Modal açma)
+        // ==========================================
+        function onDayClick(dayEl, day, month, year) {
+            selectedMeta = { day, month, year, el: dayEl };
+            modalDateText.textContent = `Tarih: ${day} ${aylar[month]} ${year}`;
+            eventTitleInp.value = "";
+            eventPlatSel.value = "Zoom";
+            eventTimeInp.value = "09:00";
+            openModal();
+        }
+
+        function openModal() { modal.classList.add("open"); }
+        function closeModal() { modal.classList.remove("open"); }
+
+        eventForm.addEventListener("submit", (e) => {
+            e.preventDefault();
+            if (!selectedMeta) return;
+            // Şimdilik sadece görsel ekleme (DB kaydı yok)
+            const title = eventTitleInp.value.trim();
+            if (!title) return;
+
+            const { el } = selectedMeta;
+            const badge = document.createElement("span");
+            badge.className = "badge";
+            badge.textContent = title;
+            el.appendChild(badge);
+            el.classList.add("has-meeting");
+
+            closeModal();
+        });
+
+        cancelBtn.addEventListener("click", closeModal);
+
+        // Ay navigasyonu
+        document.getElementById("prevMonth").addEventListener("click", () => {
+            current.setMonth(current.getMonth() - 1);
+            renderCalendar();
+        });
+
+        document.getElementById("nextMonth").addEventListener("click", () => {
+            current.setMonth(current.getMonth() + 1);
+            renderCalendar();
+        });
+
+        // ÇIKIŞ
+        const logoutBtn = document.getElementById("logoutBtn");
+        if (logoutBtn) {
+            logoutBtn.addEventListener("click", async (e) => {
+                e.preventDefault();
+                await supabaseClient.auth.signOut();
+                window.location.href = "/login";
+            });
+        }
+
+        // İLK YÜKLEME
+        initCalendar();
+    </script>
+
+</body>
+
+</html>
+```

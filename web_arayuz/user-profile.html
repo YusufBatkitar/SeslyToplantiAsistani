@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Profil Ayarları · Kullanıcı Paneli</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="assets/css/user-profile.css">
+</head>
+
+<body>
+
+    <div class="layout">
+
+        <!-- Sol Menüü -->
+        <aside class="sidebar">
+            <div class="logo">SESLY</div>
+            <ul class="menu">
+                <li><a href="/admin">Dashboard</a></li>
+                <li><a href="/meetings">Toplantılar</a></li>
+                <li><a href="/calendar">Takvim</a></li>
+                <li><a class="active" href="/profile">Profil</a></li>
+                <li><a href="#" id="logoutBtn">Çıkış</a></li>
+            </ul>
+            <div class="sidebar-footer">© 2025 Sesly</div>
+        </aside>
+
+        <!-- Profil içerik -->
+        <main class="main">
+            <header class="profile-header">
+                <div class="avatar-big" id="headerInitials">...</div>
+                <div>
+                    <h1 class="profile-name" id="headerName">Yükleniyor...</h1>
+                    <p class="profile-role">Katılımcı Kullanıcı</p>
+                </div>
+            </header>
+
+            <section class="card">
+                <h2 class="title">Kişisel Bilgiler</h2>
+
+                <form class="profile-form" id="profileForm">
+                    <label>Ad Soyad</label>
+                    <input type="text" id="fullName" placeholder="Adınız Soyadınız" />
+
+                    <label>E-posta</label>
+                    <input type="email" id="email" disabled style="opacity:0.7; cursor:not-allowed;" />
+
+                    <label>Telefon</label>
+                    <input type="tel" placeholder="+90 5XX XXX XX XX" />
+
+                    <!-- Şifre değiştirme Supabase'de ayrı API gerektirir, şimdilik UI kalsın ama pasif olsun -->
+                    <label>Yeni Şifre (Devre Dışı)</label>
+                    <input type="password" placeholder="•••••••••" disabled />
+
+                    <button type="submit" class="btn-save" id="saveBtn">Bilgileri Kaydet</button>
+                    <p id="msg" style="margin-top:10px; font-size:14px;"></p>
+                </form>
+            </section>
+
+            <section class="card danger">
+                <h2 class="title">Hesap İşlemleri</h2>
+                <p class="sub">
+                    Dikkat! Bu işlemler geri alınamaz.
+                </p>
+                <button class="btn-delete-account" id="deleteAccountBtn">Hesabı Sil</button>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- SUPABASE JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        const SUPABASE_URL = "{{ SUPABASE_URL }}";
+        const SUPABASE_ANON_KEY = "{{ SUPABASE_ANON_KEY }}";
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        const headerName = document.getElementById("headerName");
+        const headerInitials = document.getElementById("headerInitials");
+        const fullNameInput = document.getElementById("fullName");
+        const emailInput = document.getElementById("email");
+        const profileForm = document.getElementById("profileForm");
+        const saveBtn = document.getElementById("saveBtn");
+        const msg = document.getElementById("msg");
+        const logoutBtn = document.getElementById("logoutBtn");
+
+        let currentUser = null;
+
+        // 1. Oturum Kontrolü ve Veri Çekme
+        async function loadProfile() {
+            const { data: { session } } = await supabaseClient.auth.getSession();
+
+            if (!session) {
+                window.location.href = "/login";
+                return;
+            }
+
+            currentUser = session.user;
+            emailInput.value = currentUser.email;
+
+            // Profiles tablosundan veri çek
+            const { data, error } = await supabaseClient
+                .from('profiles')
+                .select('full_name')
+                .eq('id', currentUser.id)
+                .single();
+
+            if (data) {
+                const name = data.full_name || currentUser.email.split('@')[0];
+                fullNameInput.value = data.full_name || "";
+                updateHeader(name);
+            } else {
+                // Profil henüz yoksa
+                updateHeader(currentUser.email);
+            }
+        }
+
+        function updateHeader(name) {
+            headerName.textContent = name;
+            // Baş harfleri al
+            const parts = name.trim().split(" ");
+            let initials = parts[0][0].toUpperCase();
+            if (parts.length > 1) {
+                initials += parts[parts.length - 1][0].toUpperCase();
+            }
+            headerInitials.textContent = initials;
+        }
+
+        // 2. Profil Güncelleme
+        profileForm.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const newName = fullNameInput.value.trim();
+            if (!newName) return;
+
+            saveBtn.disabled = true;
+            saveBtn.textContent = "Kaydediliyor...";
+            msg.textContent = "";
+
+            try {
+                const { error } = await supabaseClient
+                    .from('profiles')
+                    .upsert({
+                        id: currentUser.id,
+                        full_name: newName,
+                        email: currentUser.email // E-posta değişmez ama upsert için gerekli olabilir
+                    });
+
+                if (error) {
+                    throw error;
+                }
+
+                msg.style.color = "green";
+                msg.textContent = "✅ Profil güncellendi!";
+                updateHeader(newName);
+
+            } catch (err) {
+                msg.style.color = "red";
+                msg.textContent = "Hata: " + err.message;
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.textContent = "Bilgileri Kaydet";
+            }
+        });
+
+        // 3. Çıkış Yap
+        logoutBtn.addEventListener("click", async (e) => {
+            e.preventDefault();
+            await supabaseClient.auth.signOut();
+            window.location.href = "/login";
+        });
+
+        // 4. Hesap Silme
+        const deleteAccountBtn = document.getElementById("deleteAccountBtn");
+        deleteAccountBtn.addEventListener("click", async () => {
+            if (!confirm("⚠️ UYARI: Hesabınız ve tüm verileriniz kalıcı olarak silinecektir.\n\nEmin misiniz?")) return;
+            if (!confirm("🚨 SON KARARINIZ MI?\n\nBu işlem geri alınamaz!")) return;
+
+            deleteAccountBtn.disabled = true;
+            deleteAccountBtn.textContent = "Siliniyor...";
+
+            try {
+                // Backend'e silme isteği gönder
+                const res = await fetch("/delete-account", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ user_id: currentUser.id })
+                });
+
+                const data = await res.json();
+
+                if (data.ok) {
+                    alert("Hesabınız silindi. Üzüldük! 😢");
+                    await supabaseClient.auth.signOut();
+                    window.location.href = "/login";
+                } else {
+                    alert("Hata: " + (data.error || "Silinemedi"));
+                    deleteAccountBtn.disabled = false;
+                    deleteAccountBtn.textContent = "Hesabı Sil";
+                }
+            } catch (err) {
+                console.error(err);
+                alert("Sunucu hatası!");
+                deleteAccountBtn.disabled = false;
+            }
+        });
+
+        // Başlat
+        loadProfile();
+
+    </script>
+</body>
+
+</html>

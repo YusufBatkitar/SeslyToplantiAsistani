@@ -1,0 +1,4 @@
+Önce server.py kodu çalıştırırlır konsolda çıkan linke ctrl tuşuna basılı tutarak tıklanır
+
+sonra yeni konsol açılıp python sistem.py yazılır
+

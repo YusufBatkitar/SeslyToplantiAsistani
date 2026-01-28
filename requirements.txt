@@ -1,0 +1,45 @@
+# ============================================================
+# CORE DEPENDENCIES - SERVER & API
+# ============================================================
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+requests==2.31.0
+httpx==0.26.0
+aiohttp==3.9.1
+psutil==5.9.7
+python-dotenv==1.0.0
+supabase==2.3.0
+jinja2==3.1.2
+
+# ============================================================
+# WINDOWS AUTOMATION (ZOOM & TEAMS DESKTOP)
+# ============================================================
+pywin32==306
+comtypes==1.4.1
+pywinauto==0.6.8
+screeninfo==0.8.1
+
+# ============================================================
+# WEB AUTOMATION (GOOGLE MEET & TEAMS WEB)
+# ============================================================
+# Meet için:
+undetected-chromedriver==3.5.5
+selenium==4.16.0
+
+# Teams ve Zoom için:
+playwright==1.40.0
+
+# ============================================================
+# AI & REPORTING
+# ============================================================
+google-generativeai==0.5.0
+# reportlab==4.0.9  <-- PDF raporu devre dışı bırakıldığı için gerekirse açılabilir
+
+# ============================================================
+# NOTLAR
+# ============================================================
+# 1. FFmpeg manuel kurulmalı ve PATH'e eklenmelidir.
+# 2. VB-Cable sürücüsü manuel kurulmalıdır.
+# 3. Playwright tarayıcıları için: `playwright install chromium` çalıştırın.
+# 4. Python 3.10+ gereklidir.

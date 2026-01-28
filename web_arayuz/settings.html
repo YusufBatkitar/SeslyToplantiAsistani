@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Ayarlar · Toplantı Botu Paneli</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="/assets/css/settings.css">
+</head>
+
+<body>
+    <div class="layout">
+        <aside class="sidebar">
+            <div>
+                <div class="logo">
+                    SESLY
+                </div>
+                <ul class="menu">
+                    <li><a href="/admin">Dashboard</a></li>
+                    <li><a href="/meetings">Toplantılar</a></li>
+                    <li><a href="/calendar">Takvim</a></li>
+                    <li><a href="/settings" class="active">Ayarlar</a></li>
+                </ul>
+            </div>
+            <div class="sidebar-footer">
+                © 2025 Sesly · Toplantı Botu
+            </div>
+        </aside>
+
+        <main class="main">
+            <header class="main-header">
+                <h1>Ayarlar</h1>
+                <p class="header-sub">
+                    Varsayılan platform, dil ve kayıt ayarlarını burada yönetebilirsin.
+                </p>
+            </header>
+
+            <section class="card">
+                <div class="card-title">Genel Ayarlar</div>
+                <p class="card-sub">
+                    Bu alanlar şimdilik sadece görsel; backend geldiğinde kaydedilecek.
+                </p>
+
+                <div class="form-row">
+                    <div class="form-col">
+                        <label for="defaultPlatform">Varsayılan Platform</label>
+                        <select id="defaultPlatform">
+                            <option>Zoom</option>
+                            <option>Microsoft Teams</option>
+                            <option>Google Meet</option>
+                        </select>
+                    </div>
+                    <div class="form-col">
+                        <label for="language">Dil</label>
+                        <select id="language">
+                            <option>Türkçe</option>
+                            <option>İngilizce</option>
+                        </select>
+                    </div>
+                </div>
+            </section>
+
+            <section class="card">
+                <div class="card-title">Kayıt &amp; Transkript</div>
+                <p class="card-sub">
+                    Bot toplantıya katıldığında neler yapacak? (Statik seçenekler)
+                </p>
+
+                <div class="checkbox-group">
+                    <label class="checkbox-row">
+                        <input type="checkbox" checked>
+                        <span>Toplantıya katılsın ama kayıt almasın</span>
+                    </label>
+                    <label class="checkbox-row">
+                        <input type="checkbox">
+                        <span>Ses kaydı alsın</span>
+                    </label>
+                    <label class="checkbox-row">
+                        <input type="checkbox">
+                        <span>Otomatik transkript oluştursun</span>
+                    </label>
+                </div>
+            </section>
+
+            <section class="card card-footer">
+                <button class="btn btn-primary">💾 Ayarları Kaydet (Demo)</button>
+            </section>
+        </main>
+    </div>
+</body>
+
+</html>

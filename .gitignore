@@ -1,0 +1,72 @@
+# ===========================================
+# GÜVENLİK - ASLA YÜKLEME
+# ===========================================
+.env
+*.env.local
+*.env.*.local
+
+# ===========================================
+# PYTHON
+# ===========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+venv/
+.venv/
+ENV/
+
+# ===========================================
+# LOG VE GEÇİCİ DOSYALAR
+# ===========================================
+logs/
+*.log
+temp_reports/
+data/*.json
+!data/.gitkeep
+
+# ===========================================
+# IDE VE EDİTÖR
+# ===========================================
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# ===========================================
+# İŞLETİM SİSTEMİ
+# ===========================================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===========================================
+# MEDYA DOSYALARI (Toplantı Kayıtları)
+# ===========================================
+*.webm
+*.wav
+*.mp3
+*.mp4
+*.m4a
+
+# ===========================================
+# TARAYICI OTURUMLARI
+# ===========================================
+chrome_profile/
+playwright_data/

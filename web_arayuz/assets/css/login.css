@@ -1,0 +1,247 @@
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #0f172a;
+    color: #0f172a;
+}
+
+/* Ana layout */
+.login-layout {
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+}
+
+/* SOL TARAF */
+.brand-side {
+    background: radial-gradient(circle at top left, #4f46e5, #0f172a);
+    color: #e5e7eb;
+    padding: 32px 40px;
+    display: flex;
+    flex-direction: column;
+}
+.brand-logo {
+    font-size: 26px;
+    font-weight: 800;
+    margin-bottom: 24px;
+}
+.brand-logo span {
+    color: #22c55e;
+}
+.brand-text {
+    font-size: 14px;
+    max-width: 420px;
+    margin-bottom: 16px;
+}
+.brand-list {
+    list-style: none;
+    font-size: 13px;
+    opacity: 0.9;
+}
+.brand-list li + li {
+    margin-top: 4px;
+}
+.brand-footer {
+    margin-top: auto;
+    font-size: 12px;
+    opacity: 0.7;
+}
+
+/* SAĞ TARAF */
+.form-side {
+    background: #e5e7eb;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+}
+.form-card {
+    width: 100%;
+    max-width: 380px;
+    background: #f9fafb;
+    border-radius: 18px;
+    padding: 22px 24px 18px;
+    box-shadow: 0 18px 40px rgba(15,23,42,0.25);
+}
+.form-title {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+.form-sub {
+    font-size: 13px;
+    color: #6b7280;
+    margin-bottom: 14px;
+}
+
+/* Rol switch */
+.role-switch {
+    display: inline-flex;
+    padding: 4px;
+    background: #e5e7eb;
+    border-radius: 999px;
+    gap: 4px;
+    margin-bottom: 14px;
+}
+.role-switch label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    cursor: pointer;
+}
+.role-switch input {
+    display: none;
+}
+.role-switch input:checked + span {
+    background: #0f172a;
+    color: #e5e7eb;
+    padding: 4px 10px;
+    border-radius: 999px;
+}
+
+/* Sosyal butonlar */
+.social-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+.btn-social {
+    flex: 1;
+    border-radius: 12px;
+    border: none;
+    padding: 7px 8px;
+    font-size: 11px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    background: #ffffff;
+    color: #111827;
+    box-shadow: 0 4px 12px rgba(15,23,42,0.15);
+}
+.btn-social span {
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    background: #f97316;
+    color: white;
+    font-size: 12px;
+    font-weight: 700;
+}
+.btn-social.ghost {
+    background: #e5e7eb;
+    box-shadow: none;
+}
+
+/* Divider */
+.divider {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 10px 0;
+}
+.divider span {
+    flex: 1;
+    height: 1px;
+    background: #e5e7eb;
+}
+.divider p {
+    font-size: 11px;
+    color: #9ca3af;
+}
+
+/* Form alanı */
+.login-form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 4px;
+}
+.login-form label {
+    font-size: 12px;
+    color: #374151;
+}
+.login-form input {
+    padding: 9px 10px;
+    border-radius: 10px;
+    border: 1px solid #d1d5db;
+    font-size: 13px;
+}
+.login-form input:focus {
+    outline: none;
+    border-color: #4f46e5;
+    box-shadow: 0 0 0 2px rgba(79,70,229,0.25);
+}
+
+.form-extra {
+    margin-top: 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.remember {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: #4b5563;
+}
+.remember input {
+    width: 12px;
+    height: 12px;
+}
+.link-small {
+    font-size: 11px;
+    color: #4f46e5;
+    text-decoration: none;
+}
+.link-small:hover {
+    text-decoration: underline;
+}
+
+.btn-primary {
+    margin-top: 10px;
+    width: 100%;
+    padding: 9px 0;
+    border-radius: 999px;
+    border: none;
+    background: #4f46e5;
+    color: #f9fafb;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+}
+.btn-primary:hover {
+    background: #4338ca;
+}
+
+.bottom-text {
+    margin-top: 10px;
+    font-size: 11px;
+    text-align: center;
+    color: #6b7280;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+    .login-layout {
+        grid-template-columns: 1fr;
+    }
+    .brand-side {
+        display: none;
+    }
+    .form-side {
+        padding: 18px;
+    }
+}

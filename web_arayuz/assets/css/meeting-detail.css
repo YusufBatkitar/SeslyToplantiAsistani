@@ -1,0 +1,131 @@
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: system-ui, sans-serif;
+    background: #e5e7eb;
+    color: #111827;
+}
+
+.layout {
+    display: flex;
+    min-height: 100vh;
+}
+
+/* Sol dar şerit */
+.sidebar {
+    width: 220px;
+    background: #020617;
+    color: #e5e7eb;
+    padding: 24px 20px;
+}
+.logo{
+  font-family: "Poppins", "Montserrat", "Segoe UI", Arial, sans-serif;
+  font-weight: 500;           /* biraz ince */
+  font-size: 35px;
+  letter-spacing: 0.06em;
+
+  background: linear-gradient(90deg,
+    #FF4FB6 0%,
+    #9A5BFF 45%,
+    #4DA7FF 100%
+  );
+
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent; /* Chrome/Safari */
+  color: transparent;                  /* diğerleri */
+}
+.logo span {
+    color: #6366f1;
+}
+.back-link {
+    display: inline-block;
+    margin-top: 6px;
+    font-size: 13px;
+    color: #e5e7eb;
+    text-decoration: none;
+}
+.back-link:hover {
+    text-decoration: underline;
+}
+
+/* Ana alan */
+.main {
+    flex: 1;
+    padding: 30px;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+}
+.card {
+    max-width: 720px;
+    width: 100%;
+    background: #f9fafb;
+    border-radius: 18px;
+    padding: 22px 24px;
+    box-shadow: 0 20px 45px rgba(15,23,42,0.18);
+}
+.pill-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+.pill {
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #e5e7eb;
+    font-size: 11px;
+}
+.pill-zoom {
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+.title {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+.subtitle {
+    font-size: 13px;
+    color: #6b7280;
+    margin-bottom: 16px;
+}
+
+.section {
+    margin-top: 12px;
+}
+.section h2 {
+    font-size: 15px;
+    margin-bottom: 4px;
+}
+.section p,
+.section li {
+    font-size: 13px;
+    color: #374151;
+}
+.section ul {
+    padding-left: 18px;
+    margin-top: 4px;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+    .layout {
+        flex-direction: column;
+    }
+    .sidebar {
+        width: 100%;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .main {
+        padding: 16px;
+    }
+}

@@ -1,0 +1,292 @@
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: system-ui, sans-serif;
+    background: #eef2ff;
+    color: #0f172a;
+}
+
+.layout {
+    display: flex;
+    min-height: 100vh;
+}
+
+/* SIDEBAR */
+.sidebar {
+    width: 240px;
+    background: #020617;
+    color: #e5e7eb;
+    padding: 24px 20px;
+    display: flex;
+    flex-direction: column;
+}
+.logo{
+  font-family: "Poppins", "Montserrat", "Segoe UI", Arial, sans-serif;
+  font-weight: 500;           /* biraz ince */
+  font-size: 35px;
+  letter-spacing: 0.06em;
+
+  background: linear-gradient(90deg,
+    #FF4FB6 0%,
+    #9A5BFF 45%,
+    #4DA7FF 100%
+  );
+
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent; /* Chrome/Safari */
+  color: transparent;                  /* diğerleri */
+}
+.logo span {
+    color: #6366f1;
+}
+.menu {
+    list-style: none;
+}
+.menu li {
+    margin-bottom: 10px;
+}
+.menu a {
+    display: block;
+    padding: 10px 14px;
+    border-radius: 8px;
+    text-decoration: none;
+    color: #e5e7eb;
+    font-size: 14px;
+    transition: background 0.15s ease, transform 0.1s ease;
+}
+.menu a.active,
+.menu a:hover {
+    background: #111827;
+    transform: translateX(1px);
+}
+.sidebar-footer {
+    margin-top: auto;
+    font-size: 12px;
+    opacity: 0.6;
+    padding-top: 16px;
+}
+
+/* MAIN */
+.main {
+    flex: 1;
+    padding: 24px 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+.main-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+}
+.main-header h1 {
+    font-size: 24px;
+    font-weight: 700;
+}
+.header-sub {
+    font-size: 13px;
+    color: #64748b;
+}
+
+/* PROFİL */
+.profile-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: #0f172a;
+    color: #e5e7eb;
+    padding: 10px 14px;
+    border-radius: 999px;
+    box-shadow: 0 10px 30px rgba(15,23,42,0.6);
+}
+.avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 999px;
+    background: #4f46e5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 700;
+}
+.profile-info {
+    display: flex;
+    flex-direction: column;
+}
+.profile-name { font-size: 14px; font-weight: 600; }
+.profile-email { font-size: 11px; opacity: 0.8; }
+.profile-role { font-size: 11px; color: #a5b4fc; }
+
+/* CARD GENEL */
+.card {
+    background: #f9fafb;
+    border-radius: 16px;
+    padding: 18px 20px;
+    box-shadow: 0 18px 40px rgba(15,23,42,0.12);
+}
+.card-title {
+    font-size: 18px;
+    margin-bottom: 6px;
+    font-weight: 600;
+}
+.card-sub {
+    font-size: 13px;
+    color: #64748b;
+    margin-bottom: 14px;
+}
+
+/* PLATFORM BUTONLARI */
+.platform-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+}
+.platform-btn {
+    display: flex;
+    flex-direction: column;
+    padding: 14px 16px;
+    border-radius: 16px;
+    text-decoration: none;
+    color: #0f172a;
+    background: #e5e7eb;
+    transition: transform 0.1s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+.platform-title {
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+.platform-desc {
+    font-size: 12px;
+    color: #4b5563;
+}
+.platform-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 16px 35px rgba(15,23,42,0.25);
+}
+.platform-btn.zoom {
+    background: #dbeafe;
+    border: 1px solid #3b82f6;
+}
+.platform-btn.teams {
+    background: #ede9fe;
+    border: 1px solid #6366f1;
+}
+.platform-btn.meet {
+    background: #dcfce7;
+    border: 1px solid #16a34a;
+}
+
+/* TOPLANTI TABLOSU */
+.meetings-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+.meetings-table th,
+.meetings-table td {
+    text-align: left;
+    padding: 8px 6px;
+    border-bottom: 1px solid #e5e7eb;
+}
+.meetings-table th {
+    color: #64748b;
+    font-weight: 600;
+}
+.link-detail {
+    text-decoration: none;
+    color: #4f46e5;
+    font-weight: 500;
+}
+.link-detail:hover {
+    text-decoration: underline;
+}
+
+/* RESPONSIVE */
+@media (max-width: 900px) {
+    .layout {
+        flex-direction: column;
+    }
+    .main-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    .platform-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+
+.menu {
+  list-style: none;
+  margin-top: 8px;
+}
+
+/* MENU LINK */
+.menu a {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 11px 14px;
+  border-radius: 12px;
+  text-decoration: none;
+  color: #cfd6ff;
+  font-size: 14px;
+
+  transition: 
+    background 0.2s ease,
+    transform 0.18s ease,
+    box-shadow 0.2s ease;
+}
+
+/* HOVER */
+.menu a:hover {
+  background: rgba(255,255,255,0.06);
+  transform: translateX(4px);
+}
+
+/* ACTIVE */
+.menu a.active {
+  background: linear-gradient(
+    90deg,
+    rgba(154,91,255,0.22),
+    rgba(77,167,255,0.08)
+  );
+  box-shadow: 0 0 16px rgba(154,91,255,0.25);
+  color: #ffffff;
+}
+
+/* ACTIVE GRADIENT LINE */
+.menu a.active::before {
+  content: "";
+  position: absolute;
+  left: -20px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 4px;
+  height: 60%;
+  border-radius: 6px;
+  background: linear-gradient(
+    180deg,
+    #FF4FB6,
+    #9A5BFF,
+    #4DA7FF
+  );
+}
+
+
+
+
+.logo {
+  margin-bottom: 32px;   /* logo biraz nefes alsın */
+}
+.menu .item {
+  margin-bottom: 10px;  /* menüler de sıkışmasın */
+}
