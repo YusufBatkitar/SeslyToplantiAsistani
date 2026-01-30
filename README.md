@@ -10,7 +10,7 @@
 **Zoom, Microsoft Teams ve Google Meet toplantılarını otomatik olarak kaydeden,  
 yapay zeka ile yazıya döken ve akıllı raporlar oluşturan kapsamlı bir toplantı asistanı.**
 
-[Kurulum](#kurulum) · [Kullanim](#kullanim) · [API](#api-referansi) · [SSS](#sik-sorulan-sorular)
+· [Kullanim](#kullanim) · [API](#api-referansi) · [SSS](#sik-sorulan-sorular)
 
 </div>
 
@@ -202,67 +202,6 @@ Toplantı bitince otomatik olarak oluşturulan raporlar:
 
 ---
 
-## Kurulum
-
-### 1. Depoyu Klonlayin
-```bash
-git clone https://github.com/kullaniciadi/SeslyToplantiAsistani.git
-cd SeslyToplantiAsistani
-```
-
-### 2. Sanal Ortam Olusturun
-```bash
-python -m venv venv
-venv\Scripts\activate
-```
-
-### 3. Bagimliliklari Yukleyin
-```bash
-pip install -r requirements.txt
-```
-
-### 4. Playwright Tarayicilarini Kurun
-```bash
-playwright install chromium
-```
-
-### 5. FFmpeg Kurulumu
-1. [FFmpeg](https://ffmpeg.org/download.html) indirin
-2. `bin` klasörünü PATH'e ekleyin
-
-### 6. VB-Cable Kurulumu
-1. [VB-Cable](https://vb-audio.com/Cable/) indirin
-2. Sürücüyü yönetici olarak kurun
-
-### 7. Yapilandirma
-Proje kök dizininde `.env` dosyası oluşturun:
-
-```env
-# SUPABASE AYARLARI
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_KEY=your-anon-key
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-
-# GEMINI AI AYARLARI
-GEMINI_API_KEY=your-gemini-api-key
-GEMINI_MODEL=gemini-2.5-flash
-
-# SUNUCU AYARLARI
-PORT=8000
-HOST=127.0.0.1
-```
-
----
-
-## Kullanim
-
-### Sunucuyu Baslatma
-```bash
-python server.py
-python sistem.py
-```
-
-Sunucu `http://127.0.0.1:8000` adresinde başlayacaktır.
 
 ### Adim Adim Kullanim
 
