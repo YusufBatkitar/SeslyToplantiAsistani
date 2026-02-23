@@ -5,13 +5,26 @@ import logging
 import re
 from playwright.async_api import async_playwright
 
-try:
-    import win32gui
-    import win32con
-    import win32process
-    HAS_WIN32 = True
-except ImportError:
+# Platform abstraction
+from platform_utils import IS_WINDOWS, IS_LINUX, get_chrome_options_for_platform, setup_display
+
+# Linux'ta display ayarla
+setup_display()
+
+# Windows-only imports
+if IS_WINDOWS:
+    try:
+        import win32gui
+        import win32con
+        import win32process
+        HAS_WIN32 = True
+    except ImportError:
+        HAS_WIN32 = False
+else:
     HAS_WIN32 = False
+    win32gui = None
+    win32con = None
+    win32process = None
 
 # Logger Setup
 logger = logging.getLogger("ZoomWebClient")
@@ -87,7 +100,10 @@ class ZoomWebBot:
             return None
 
     def _bring_to_front_force(self, pid=None, target_title=None):
-        """Windows API kullanarak pencereyi zorla öne getirir (BULLETPROOF)."""
+        """Windows API kullanarak pencereyi zorla öne getirir. Linux'ta no-op."""
+        if not IS_WINDOWS:
+            return  # Linux'ta headless modda gerek yok
+        
         try:
             import ctypes
             from ctypes import wintypes
@@ -259,35 +275,54 @@ class ZoomWebBot:
         logger.info("Playwright başlatılıyor...")
         self.playwright = await async_playwright().start()
         
-        # TAM EKRAN MODDA BAŞLAT
-        import screeninfo
-        try:
-            # Birincil monitörün çözünürlüğünü al
-            screen = screeninfo.get_monitors()[0]
-            screen_width = screen.width
-            screen_height = screen.height
-            logger.info(f"Ekran çözünürlüğü: {screen_width}x{screen_height}")
-        except:
-            # Fallback
+        # EKRAN BOYUTU - Platform'a göre
+        if IS_LINUX:
+            # Linux: Sabit boyut (Xvfb)
             screen_width = 1920
             screen_height = 1080
-            logger.warning("Ekran çözünürlüğü alınamadı, varsayılan kullanılıyor")
+            logger.info(f"Linux modu: {screen_width}x{screen_height}")
+        else:
+            # Windows: Gerçek monitör boyutu
+            try:
+                import screeninfo
+                screen = screeninfo.get_monitors()[0]
+                screen_width = screen.width
+                screen_height = screen.height
+                logger.info(f"Ekran çözünürlüğü: {screen_width}x{screen_height}")
+            except:
+                screen_width = 1920
+                screen_height = 1080
+                logger.warning("Ekran çözünürlüğü alınamadı, varsayılan kullanılıyor")
         
         # Viewport için tarayıcı chrome'u (adres çubuğu vs.) hesaba kat
         # Alttaki toolbar görünsün diye yüksekliği düşür
         viewport_height = screen_height - 150  # Chrome UI + toolbar için boşluk
         
+        # Browser args - platform'a göre
+        browser_args = [
+            "--use-fake-ui-for-media-stream",
+            "--disable-notifications",
+            "--disable-infobars",
+            "--disable-extensions",
+            f"--window-size={screen_width},{screen_height}",
+            "--force-device-scale-factor=1",
+        ]
+        
+        if IS_LINUX:
+            # Headless mode için ek args
+            browser_args.extend([
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+            ])
+            headless_mode = False  # Xvfb ile headful mod (speaker detection için)
+        else:
+            browser_args.append("--start-maximized")
+            headless_mode = False
+        
         self.browser = await self.playwright.chromium.launch(
-            headless=False,
-            args=[
-                "--use-fake-ui-for-media-stream",
-                "--disable-notifications",
-                "--start-maximized",  # Maximize başlat
-                "--disable-infobars",  # "Chrome otomasyon kontrolünde" yazısını gizle
-                "--disable-extensions",
-                f"--window-size={screen_width},{screen_height}",
-                "--force-device-scale-factor=1",  # Scale düzgün olsun
-            ]
+            headless=headless_mode,
+            args=browser_args
         )
         
         self.context = await self.browser.new_context(
@@ -651,56 +686,36 @@ class ZoomWebBot:
                         logger.error("❌ Bekleme süresi (10dk) doldu!")
                         return False
                     
-                    # İçeri alındık mı kontrol et
-                    # ÇİFT KONTROL GEREKLİ:
-                    # 1. Waiting text GÖRÜNÜR değil artık (gizli veya yok)
-                    # 2. VE meeting toolbar görünür
+                    # İçeri alındık mı kontrol et (innerText tabanlı - EN GÜVENİLİR)
                     try:
-                        # 1. Waiting text hala GÖRÜNÜR mü kontrol et
-                        current_content = await self.page.content()
+                        visible_text = await self.page.evaluate("document.body.innerText || ''")
+                        visible_text_lower = visible_text.lower()
                         
-                        # Görünür waiting elementleri ara
-                        waiting_visible = False
-                        waiting_selectors = [
-                            "text=Host has joined",
-                            "text=We've let them know",
-                            "text=Waiting for the host",
-                            "text=Please wait"
+                        # Bekleme odası metinleri hala görünüyor mu?
+                        waiting_texts = [
+                            "host has joined",
+                            "we've let them know",
+                            "waiting for the host",
+                            "please wait",
+                            "waiting room",
                         ]
+                        still_waiting = any(t in visible_text_lower for t in waiting_texts)
                         
-                        for sel in waiting_selectors:
-                            try:
-                                elem = await self.page.locator(sel).first
-                                if await elem.is_visible():
-                                    waiting_visible = True
-                                    break
-                            except:
-                                continue
+                        # Toplantı-specifik butonlar görünüyor mu?
+                        # NOT: "Mute" pre-join'de de var, kullanma!
+                        # "Participants", "Chat", "Leave" SADECE toplantıda görünür
+                        meeting_indicators = ["participants", "chat", "leave"]
+                        in_meeting = all(t in visible_text_lower for t in meeting_indicators)
                         
-                        # Eğer waiting text GÖZÜKMÜYORSA, toolbar kontrol et
-                        if not waiting_visible:
-                            # 2. Meeting-only toolbar elements (bekleme odasında OLMAYAN)
-                            meeting_only_selectors = [
-                                "button[aria-label*='Mute']",
-                                "button[aria-label*='Chat']",  # Chat sadece meeting'de
-                                "button[aria-label*='Share']"  # Share sadece meeting'de
-                            ]
+                        if not still_waiting and in_meeting:
+                            logger.info("✅ Bekleme odasından içeri alındık!")
+                            logger.info("✅ Katılım Başarılı!")
+                            break
+                        elif in_meeting and still_waiting:
+                            # Bazen geçiş sırasında her ikisi de görünebilir
+                            logger.info("✅ Toplantı UI tespit edildi (geçiş aşaması)")
+                            break
                             
-                            admitted = False
-                            for selector in meeting_only_selectors:
-                                try:
-                                    elem = await self.page.query_selector(selector)
-                                    if elem and await elem.is_visible():
-                                        admitted = True
-                                        logger.info(f"✅ Toplantı elementi tespit edildi: {selector}")
-                                        break
-                                except:
-                                    continue
-                            
-                            if admitted:
-                                logger.info("✅ Bekleme odasından içeri alındık!")
-                                logger.info("✅ Katılım Başarılı!")
-                                break
                     except Exception as e:
                         logger.debug(f"Admission check error: {e}")
                     
@@ -797,7 +812,6 @@ class ZoomWebBot:
                 const selectors = [
                     "button[aria-label='Chat']",
                     "button[aria-label*='Chat' i]",
-                    "button:has-text('Chat')",
                     "div[role='button'][aria-label*='Chat']"
                 ];
                 
@@ -887,7 +901,7 @@ class ZoomWebBot:
                     "button[aria-label='Participants']",
                     "button[aria-label*='Participants' i]",
                     "button[aria-label*='Katılımcılar' i]",
-                    "button:has-text('Participants')",
+                    "button[aria-label*='participant' i]",
                     "div[role='button'][aria-label*='Participants']"
                 ];
                 
@@ -1293,27 +1307,34 @@ class ZoomWebBot:
                 pass
             
             # 1. URL Kontrolü
-            # Toplantı bitince Zoom genelde '/postattendee' veya '/j/...' yerine ana sayfaya yönlendirir
             url = self.page.url
             if "postattendee" in url or "ended" in url:
                 logger.info("URL değişikliği tespit edildi (Meeting Ended).")
                 return True
-                
-            # 2. Modal/Metin Kontrolü
+            
+            # 2. ÖNCE bitiş mesajlarını kontrol et (overlay Mute butonunun üstünde olabilir!)
             try:
-                content = (await self.page.content()).lower()
+                visible_text = await self.page.evaluate("document.body.innerText || ''")
+                visible_text_lower = visible_text.lower()
                 
-                # TOPLANTI BİTTİ MESAJLARI
+                # DEBUG: Her 60 saniyede bir sayfadaki metni logla
+                if not hasattr(self, '_debug_counter'):
+                    self._debug_counter = 0
+                self._debug_counter += 1
+                if self._debug_counter % 120 == 1:  # ~60 saniyede bir (0.5s interval)
+                    preview = visible_text[:300].replace('\n', ' | ')
+                    logger.info(f"[DEBUG-PAGE] URL: {url}")
+                    logger.info(f"[DEBUG-PAGE] Text: {preview}")
+                
                 end_phrases = [
                     "the meeting has ended",
                     "this meeting has been ended by host",
                     "meeting has been ended by host",
                     "toplantı sahibi tarafından sonlandırıldı",
                     "you have been removed",
-                    "leave meeting",
+                    "this meeting has been ended",
                 ]
                 
-                # GEÇERSİZ/ESKİ LİNK MESAJLARI (YENİ!)
                 invalid_phrases = [
                     "this meeting id is not valid",
                     "invalid meeting id",
@@ -1322,33 +1343,27 @@ class ZoomWebBot:
                     "this meeting link is not valid",
                     "the meeting has expired",
                     "meeting has already ended",
-                    "this meeting has not started",
-                    "please wait for the host to start this meeting",
-                    "waiting for host to start",
                     "this link has expired",
                     "geçersiz toplantı",
                     "toplantı bulunamadı",
-                    "toplantı mevcut değil",
-                    "bu toplantı linki geçersiz",
                 ]
                 
                 for phrase in end_phrases:
-                    if phrase in content:
+                    if phrase in visible_text_lower:
                         logger.info(f"Toplantı bitiş metni tespit edildi: {phrase}")
-                        self.end_reason = "normal"  # Normal bitiş
+                        self.end_reason = "normal"
                         return True
 
                 for phrase in invalid_phrases:
-                    if phrase in content:
+                    if phrase in visible_text_lower:
                         logger.warning(f"⚠️ GEÇERSİZ TOPLANTI TESPİT EDİLDİ: {phrase}")
-                        self.end_reason = f"Geçersiz toplantı linki: {phrase}"  # Hata sebebi
+                        self.end_reason = f"Geçersiz toplantı linki: {phrase}"
                         return True
                     
-            except:
+            except Exception as e:
+                logger.warning(f"innerText kontrolü başarısız: {e}")
+                # innerText alınamazsa sayfa muhtemelen değişti/kapandı
                 pass
-            
-            # NOT: Tek katılımcı timeout özelliği kaldırıldı
-            # Toplantı sadece host bitirdiğinde veya herkes ayrıldığında sona erer
 
             return False
             

@@ -1,0 +1,98 @@
+# ============================================================
+# SESLY BOT - Docker Compose Configuration
+# ============================================================
+# Multi-container setup with Redis queue and worker scaling
+
+version: '3.8'
+
+services:
+  # ============================================================
+  # REDIS - Message Queue
+  # ============================================================
+  redis:
+    image: redis:7-alpine
+    container_name: sesly-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================
+  # API SERVER - FastAPI Backend
+  # ============================================================
+  api:
+    build: .
+    container_name: sesly-api
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
+      - PORT=9000
+      - HOST=0.0.0.0
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./temp_reports:/app/temp_reports
+      - ./logs:/app/logs
+      - shared_data:/app/data
+    command: python server.py
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============================================================
+  # BOT WORKERS - Celery Workers (Parallel Bots)
+  # ============================================================
+  worker:
+    build: .
+    restart: unless-stopped
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - API_HOST=api
+      - API_PORT=9000
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - shared_data:/app/data
+    # Each worker gets its own container with isolated audio/display
+    deploy:
+      replicas: 3  # 3 parallel bots (can scale up/down)
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 2G
+    command: celery -A tasks worker --loglevel=info --concurrency=1
+
+# ============================================================
+# VOLUMES
+# ============================================================
+volumes:
+  redis_data:
+    driver: local
+  shared_data:
+    driver: local

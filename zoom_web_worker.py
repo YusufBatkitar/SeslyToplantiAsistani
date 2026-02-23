@@ -3,20 +3,33 @@ import time
 import asyncio
 import subprocess
 import traceback
-import ctypes
-from ctypes import wintypes
 from pathlib import Path
 from zoom_web_client import ZoomWebBot
 import logging
 
-try:
-    import win32gui
-    import win32con
-    import win32process
-    HAS_WIN32 = True
-except ImportError:
+# Platform abstraction
+from platform_utils import IS_WINDOWS, IS_LINUX, setup_display
+
+# Linux'ta display ayarla
+setup_display()
+
+# Windows-only imports (conditional)
+if IS_WINDOWS:
+    import ctypes
+    from ctypes import wintypes
+    try:
+        import win32gui
+        import win32con
+        import win32process
+        HAS_WIN32 = True
+    except ImportError:
+        HAS_WIN32 = False
+        win32gui = None
+else:
     HAS_WIN32 = False
     win32gui = None
+    ctypes = None
+    wintypes = None
 
 try:
     import psutil
@@ -338,7 +351,7 @@ async def run_zoom_web_task(meeting_url, bot_name="Sesly Bot", password=None):
 
         # 1. Botu Başlat
         logger.info(f"Zoom WEB görevi başlıyor: {meeting_url}")
-        update_status(running=True, status_message="Zoom (Web) tarayıcı açılıyor...")
+        update_status(running=True, status_message="Zoom tarayıcı açılıyor...")
         
         bot = ZoomWebBot(meeting_url, bot_name=bot_name, password=password)
         await bot.start()
@@ -422,7 +435,7 @@ async def run_zoom_web_task(meeting_url, bot_name="Sesly Bot", password=None):
         logger.info("Recorder başlatılıyor...")
         try:
             recorder_proc = subprocess.Popen(["python", RECORDER_SCRIPT, "--platform", "zoom"])
-            update_status(recording=True, status_message="🔴 Kayıt Alınıyor (Web)")
+            update_status(recording=True, status_message="🔴 Kayıt Alınıyor")
         except Exception as e:
             logger.error(f"Recorder hatası: {e}")
             
@@ -432,6 +445,7 @@ async def run_zoom_web_task(meeting_url, bot_name="Sesly Bot", password=None):
         # 4. Döngü
         logger.info("Toplantı izleniyor...")
         speaker_check_interval = 0.5
+        last_participant_log = 0  # Son katılımcı log zamanı
         
         while True:
             # A. Task İptali Kontrolü - KALDIRILDI!
@@ -484,8 +498,9 @@ async def run_zoom_web_task(meeting_url, bot_name="Sesly Bot", password=None):
                 if not speakers:
                     try:
                         all_participants = await bot.get_all_participants()
-                        if all_participants:
+                        if all_participants and (time.time() - last_participant_log > 60):
                             logger.info(f"📋 Katılımcılar ({len(all_participants)}): {', '.join(all_participants[:5])}...")
+                            last_participant_log = time.time()
                     except: pass
                 
                 if speakers:

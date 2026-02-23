@@ -13,26 +13,34 @@ import psutil
 import json
 from pathlib import Path
 
+# Platform abstraction
+from platform_utils import (
+    IS_WINDOWS, IS_LINUX, 
+    get_audio_device, get_audio_device_for_ffmpeg, 
+    get_ffmpeg_path, setup_display
+)
+
+# Linux'ta display'i ayarla
+setup_display()
+
 from dotenv import load_dotenv
 load_dotenv(override=True)
 
 API_KEY = os.getenv("GEMINI_API_KEY")
 if not API_KEY:
-    raise ValueError("GEMINI_API_KEY bulunamadı! .env dosyasını kontrol edin.")
+    print("[WARN] GEMINI_API_KEY bulunamadı! Transkripsiyon devre dışı.")
 MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
-VAC_DEVICE_NAME = "CABLE Output (VB-Audio Virtual Cable)"  # Zoom ses çıkışı
+# Cross-platform audio device
+VAC_DEVICE_NAME = get_audio_device()
 
-# FFmpeg yolunu .env'den al, yoksa PATH'te ara
-import shutil
-FFMPEG_PATH = os.getenv("FFMPEG_PATH")
-if not FFMPEG_PATH:
-    FFMPEG_PATH = shutil.which("ffmpeg")  # PATH'te ara
-if not FFMPEG_PATH:
-    raise ValueError("FFMPEG_PATH bulunamadı! .env dosyasına FFMPEG_PATH ekleyin veya FFmpeg'i PATH'e ekleyin.")
+# Cross-platform FFmpeg path
+FFMPEG_PATH = get_ffmpeg_path()
 
-port = os.getenv("PORT", "8001")
-SERVER_URL = f"http://127.0.0.1:{port}/transcribe-webm"
+# Docker'da worker→api iletişimi: servis adı "api" kullanılmalı
+api_host = os.getenv("API_HOST", "127.0.0.1")  # Docker: "api", Local: "127.0.0.1"
+api_port = os.getenv("API_PORT", os.getenv("PORT", "9000"))
+SERVER_URL = f"http://{api_host}:{api_port}/transcribe-webm"
 
 VISION_MONITOR_ENABLED = False
 
@@ -152,14 +160,27 @@ def start_ffmpeg_recording():
     logger.info("[FFMPEG] Segment bazlı WebM kayıt başlatılıyor...")
     logger.info("=" * 60)
 
-    cmd = [
-        FFMPEG_PATH,
-        "-f", "dshow",
-        "-rtbufsize", "1G",
-        "-thread_queue_size", "4096",
-        "-use_wallclock_as_timestamps", "1",
-        "-i", f"audio={VAC_DEVICE_NAME}",
-
+    # Platform-specific FFmpeg komutu
+    if IS_WINDOWS:
+        # Windows: DirectShow + VB-Cable
+        cmd = [
+            FFMPEG_PATH,
+            "-f", "dshow",
+            "-rtbufsize", "1G",
+            "-thread_queue_size", "4096",
+            "-use_wallclock_as_timestamps", "1",
+            "-i", f"audio={VAC_DEVICE_NAME}",
+        ]
+    else:
+        # Linux: PulseAudio virtual sink
+        cmd = [
+            FFMPEG_PATH,
+            "-f", "pulse",
+            "-i", "virtual_mic.monitor",  # docker-entrypoint.sh'da oluşturuluyor
+        ]
+    
+    # Common encoding options
+    cmd.extend([
         "-vn", "-sn", "-dn",        # Video/Subtitle/Data OFF
 
         # Opus 16k CBR
@@ -174,17 +195,17 @@ def start_ffmpeg_recording():
         # Timestamp fix
         "-avoid_negative_ts", "make_zero",
         "-fflags", "+genpts",
-        "-af", "aresample=async=1", # 🔥 Audio sync fix
+        "-af", "aresample=async=1", # Audio sync fix
 
         # Segmentation
         "-f", "segment",
-        "-segment_time", "300", # 5 dakika (Kullanıcı tercihi)
+        "-segment_time", "300", # 5 dakika
         "-break_non_keyframes", "1",
-        "-reset_timestamps", "1", # 🔥 Her segmentte süreyi sıfırla
+        "-reset_timestamps", "1",
         "-segment_format", "webm",
         
         chunk_pattern
-    ]
+    ])
 
     logger.info("[CMD] ffmpeg komutu:")
     logger.info(f"  {' '.join(cmd)}")
@@ -199,7 +220,7 @@ def start_ffmpeg_recording():
             stdin=subprocess.PIPE,
             stdout=subprocess.DEVNULL,   # ← stdout artık asla yazmıyor
             stderr=log_file,             # ← sadece HATALAR yazılıyor
-            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
+            creationflags=subprocess.CREATE_NO_WINDOW if IS_WINDOWS else 0
         )
 
         recording_start_time = time.time()
@@ -296,7 +317,7 @@ def stop_ffmpeg_recording(process):
 def get_audio_duration(path: Path) -> float:
     """ffprobe ile ses süresini saniye olarak al"""
     try:
-        ffprobe_path = FFMPEG_PATH.replace("ffmpeg.exe", "ffprobe.exe")
+        ffprobe_path = FFMPEG_PATH.replace("ffmpeg.exe", "ffprobe.exe") if IS_WINDOWS else FFMPEG_PATH.replace("ffmpeg", "ffprobe")
         cmd = [
             ffprobe_path, "-v", "quiet", "-print_format", "json",
             "-show_format", str(path)
@@ -396,7 +417,7 @@ def process_live_queue():
         
         # DEBUG: Segment sayısını logla
         if len(all_segments) > 0:
-            try: logger.info(f"[DEBUG] Live Check: {len(all_segments)} segment bulundu: {[s.name for s in all_segments]}")
+            try: logger.debug(f"[DEBUG] Live Check: {len(all_segments)} segment bulundu: {[s.name for s in all_segments]}")
             except Exception: pass
 
         # Eğer 2'den az dosya varsa (biri yazılıyor), işlem yapma
@@ -440,7 +461,7 @@ def is_valid_chunk(path: Path) -> bool:
 
     # 2) ffprobe ile duration kontrolü
     try:
-        ffprobe_path = FFMPEG_PATH.replace("ffmpeg.exe", "ffprobe.exe")
+        ffprobe_path = FFMPEG_PATH.replace("ffmpeg.exe", "ffprobe.exe") if IS_WINDOWS else FFMPEG_PATH.replace("ffmpeg", "ffprobe")
         cmd = [
             ffprobe_path,
             "-v", "quiet",
@@ -456,8 +477,13 @@ def is_valid_chunk(path: Path) -> bool:
 
         # 🔥 GEVŞETME: 0.5s → 0.3s
         if duration < 0.3:
-            logger.info(f"[SKIP] {path.name} → Duration çok kısa ({duration:.3f} sn)")
-            return False
+            # WebM/Opus segment dosyalarında ffprobe duration yanlış dönebilir
+            # Dosya boyutu > 100KB ise yine de gönder (gerçek ses var)
+            if size_kb > 100:
+                logger.info(f"[WARN] {path.name} → ffprobe duration={duration:.3f}s ama boyut={size_kb:.0f}KB, yine de gönderilecek")
+            else:
+                logger.info(f"[SKIP] {path.name} → Duration çok kısa ({duration:.3f} sn)")
+                return False
 
         # 3) Paket (cluster) sayısı kontrolü
         streams = info.get("streams", [])
@@ -538,7 +564,7 @@ def send_final_webm():
         
         # Süreyi al
         try:
-            ffprobe_path = FFMPEG_PATH.replace("ffmpeg.exe", "ffprobe.exe")
+            ffprobe_path = FFMPEG_PATH.replace("ffmpeg.exe", "ffprobe.exe") if IS_WINDOWS else FFMPEG_PATH.replace("ffmpeg", "ffprobe")
             cmd = [
                 ffprobe_path, "-v", "quiet", "-print_format", "json",
                 "-show_format", str(seg)

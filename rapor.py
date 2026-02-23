@@ -18,10 +18,9 @@ load_dotenv(override=True)
 
 API_KEY = os.getenv("GEMINI_API_KEY")
 if not API_KEY:
-    print("[ERROR] GEMINI_API_KEY bulunamadı! .env dosyasını kontrol edin.")
-    raise ValueError("GEMINI_API_KEY gerekli!")
-
-genai.configure(api_key=API_KEY)
+    print("[WARN] GEMINI_API_KEY bulunamadı! Rapor oluşturma devre dışı.")
+else:
+    genai.configure(api_key=API_KEY)
 
 def raporu_html_olarak_kaydet(rapor_metni, dosya_adi, meeting_title=None):
     """
@@ -663,6 +662,7 @@ SEN: Sen yüksek düzeyde profesyonel bir toplantı analisti ve formatlama uzman
     except Exception as e:
         print(f"[ERROR] Gemini hatası: {e}")
         # Basit fallback rapor (HTML formatında)
+        participants_str = ', '.join(participant_names) if participant_names else 'Bilinmiyor'
         rapor_metni = f"""
 <h1 style='font-size: 24px; color: #1e88e5; border-bottom: 2px solid #1e88e5; padding-bottom: 5px;'>TOPLANTI RAPORU</h1>
 
@@ -670,12 +670,10 @@ SEN: Sen yüksek düzeyde profesyonel bir toplantı analisti ve formatlama uzman
 <p style='font-size: 14px;'>Toplantı kaydı alındı. {participant_count} katılımcı tespit edildi.</p>
 
 <h2 style='font-size: 18px; color: #333;'>2. Katılımcılar</h2>
-<p style='font-size: 14px;'>{', '.join(participant_names) if participant_names else 'Bilinmiyor'}</p>
+<p style='font-size: 14px;'>{participants_str}</p>
 
 <h2 style='font-size: 18px; color: #333;'>3. Konuşmacı İstatistikleri</h2>
 <p style='font-size: 14px;'>Toplam konuşmacı: {speaker_stats['total_speakers']}</p>
-
-{top_speakers_data.replace('**', '<strong>').replace('\n', '<br>')}
 
 <h2 style='font-size: 18px; color: #333;'>4. Not</h2>
 <p style='font-size: 14px;'>Detaylı analiz için Gemini API'sine erişim gerekli.<br>Hata: {str(e)}</p>

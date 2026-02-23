@@ -209,6 +209,20 @@
       color: rgba(234, 240, 255, 0.65);
     }
 
+    .link {
+      font-size: 12px;
+      color: #9A5BFF;
+      cursor: pointer;
+      text-decoration: underline;
+      background: none;
+      border: none;
+      padding: 0;
+    }
+
+    .link:hover {
+      color: #FF4FB6;
+    }
+
     .btn {
       width: 100%;
       border: 0;
@@ -311,6 +325,7 @@
 
         <div class="row">
           <span class="hint">Giriş başarılı olunca yönlendireceğiz.</span>
+          <button type="button" class="link" id="btnForgot">Şifremi Unuttum</button>
         </div>
 
         <button class="btn btn-primary" type="submit">Giriş Yap</button>
@@ -335,6 +350,19 @@
 
         <div class="msg" id="msgSignup"></div>
       </form>
+
+      <!-- FORGOT PASSWORD -->
+      <form id="forgotForm" style="display:none;">
+        <div class="field">
+          <label for="forgotEmail">E-posta Adresiniz</label>
+          <input id="forgotEmail" type="email" placeholder="ornek@mail.com" required>
+        </div>
+
+        <button class="btn btn-primary" type="submit">Şifre Sıfırlama Linki Gönder</button>
+        <button type="button" class="btn btn-ghost" id="btnBackToLogin">← Giriş Sayfasına Dön</button>
+
+        <div class="msg" id="msgForgot"></div>
+      </form>
     </section>
 
   </div>
@@ -346,7 +374,9 @@
     const tabSignup = document.getElementById("tabSignup");
     const loginForm = document.getElementById("loginForm");
     const signupForm = document.getElementById("signupForm");
+    const forgotForm = document.getElementById("forgotForm");
     const msgLogin = document.getElementById("msgLogin");
+    const msgForgot = document.getElementById("msgForgot");
     const msgSignup = document.getElementById("msgSignup");
 
     function setMsg(el, text, type) {
@@ -356,6 +386,7 @@
     function clearMsgs() {
       setMsg(msgLogin, "");
       setMsg(msgSignup, "");
+      if (msgForgot) setMsg(msgForgot, "");
     }
 
     if (tabLogin && tabSignup && loginForm && signupForm) {
@@ -364,6 +395,7 @@
         tabSignup.classList.remove("active");
         loginForm.style.display = "";
         signupForm.style.display = "none";
+        forgotForm.style.display = "none";
         clearMsgs();
       };
       tabSignup.onclick = () => {
@@ -371,6 +403,31 @@
         tabLogin.classList.remove("active");
         signupForm.style.display = "";
         loginForm.style.display = "none";
+        forgotForm.style.display = "none";
+        clearMsgs();
+      };
+    }
+
+    // Forgot Password button
+    const btnForgot = document.getElementById("btnForgot");
+    const btnBackToLogin = document.getElementById("btnBackToLogin");
+    
+    if (btnForgot) {
+      btnForgot.onclick = () => {
+        loginForm.style.display = "none";
+        signupForm.style.display = "none";
+        forgotForm.style.display = "";
+        tabLogin.classList.remove("active");
+        tabSignup.classList.remove("active");
+        clearMsgs();
+      };
+    }
+    
+    if (btnBackToLogin) {
+      btnBackToLogin.onclick = () => {
+        forgotForm.style.display = "none";
+        loginForm.style.display = "";
+        tabLogin.classList.add("active");
         clearMsgs();
       };
     }
@@ -434,6 +491,27 @@
       if (error) return setMsg(msgSignup, error.message, "err");
 
       setMsg(msgSignup, "Kayıt başarılı! E-posta doğrulaması gerekebilir. Sonra giriş yap.", "ok");
+    });
+
+    // Forgot Password Handler
+    forgotForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      setMsg(msgForgot, "Şifre sıfırlama linki gönderiliyor...");
+
+      if (!supabaseClient) {
+        setMsg(msgForgot, "Demo modu: Şifre sıfırlama özelliği pasif.", "err");
+        return;
+      }
+
+      const email = document.getElementById("forgotEmail").value.trim();
+
+      const { data, error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+        redirectTo: window.location.origin + '/reset-password'
+      });
+      
+      if (error) return setMsg(msgForgot, error.message, "err");
+
+      setMsg(msgForgot, "Şifre sıfırlama linki e-posta adresinize gönderildi! Lütfen e-postanızı kontrol edin.", "ok");
     });
 
     // (Opsiyonel) sayfa açılınca session var mı?

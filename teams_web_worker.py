@@ -98,7 +98,7 @@ async def run_teams_task(meeting_url):
 
         # 1. Botu Başlat
         logger.info(f"Teams görevi başlıyor: {meeting_url}")
-        update_status(running=True, status_message="Teams (Web) başlatılıyor...")
+        update_status(running=True, status_message="Teams başlatılıyor...")
         
         bot = TeamsWebBot(meeting_url, bot_name="Sesly Bot")
         await bot.start()
@@ -150,15 +150,9 @@ async def run_teams_task(meeting_url):
         # 5. Döngü: Toplantı Bitene Kadar Bekle
         logger.info("Toplantı izleniyor...")
         while True:
-            # Task iptal edildi mi kontrol et (Dosyadan)
-            if BOT_TASK_FILE.exists():
-                try:
-                    task = json.loads(BOT_TASK_FILE.read_text(encoding="utf-8"))
-                    if not task.get("active", False):
-                        logger.info("Görev iptal edildi.")
-                        break
-                except:
-                    pass
+            # NOT: bot_task.json kontrolü KALDIRILDI
+            # API dosyayı yeniden yazınca worker erkenden çıkıyordu (false positive)
+            # Stop komutu sadece bot_command.json ile gelir
 
             # Komut kontrolü (Stop/Pause)
             BOT_COMMAND_FILE = Path("data/bot_command.json")
@@ -218,7 +212,7 @@ async def run_teams_task(meeting_url):
                 pass
                 
             # Heartbeat (UI Active kalsın diye)
-            update_status(zoom_running=True, running=True, recording=recorder_proc is not None)
+            update_status(running=True, recording=recorder_proc is not None)
 
             await asyncio.sleep(2)
 
