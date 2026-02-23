@@ -13,6 +13,12 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
+# Platform abstraction
+from platform_utils import IS_WINDOWS, IS_LINUX, get_chrome_options_for_platform, setup_display
+
+# Linux'ta display ayarla
+setup_display()
+
 # Logger Setup
 logger = logging.getLogger("MeetWebClient")
 logger.setLevel(logging.INFO)
@@ -45,9 +51,19 @@ class MeetWebBot:
         options.add_argument("--autoplay-policy=no-user-gesture-required")  # WebRTC için
         options.add_argument("--disable-infobars")
         
+        # Platform-specific options
+        if IS_LINUX:
+            # Xvfb ile headful mod (speaker detection için headless kullanmıyoruz)
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
+            options.add_argument("--disable-gpu")
+            options.add_argument("--window-size=1920,1080")
+        
         # undetected-chromedriver başlat
         self.driver = uc.Chrome(options=options, use_subprocess=True)
-        self.driver.maximize_window()
+        
+        if not IS_LINUX:
+            self.driver.maximize_window()
         
         # WebRTC Audio Track Injection (MEET AÇILMADAN ÖNCE)
         try:
@@ -635,90 +651,162 @@ class MeetWebBot:
             return False
 
     async def send_message(self, message):
-        """Chat panelini açar ve mesaj gönderir."""
-        if not message: return
-        
+        """Chat panelini açar ve mesaj gönderir - xdotool (sistem klavyesi)."""
+        import re, subprocess, shutil
+        from platform_utils import IS_LINUX
+
+        if not message:
+            return
+
         try:
             logger.info(f"Mesaj gönderiliyor: {message}")
-            
-            # 1. Chat panelini aç (Eğer kapalıysa)
+
+            # Emoji'leri kaldır (xdotool ASCII dışını yanlış işleyebilir)
+            clean_message = re.sub(
+                r'[^\x00-\x7F\u00C0-\u024F\u011E\u011F\u0130\u0131\u015E\u015F\u00D6\u00F6\u00DC\u00FC\u00C7\u00E7]+',
+                '', message
+            ).strip()
+            if not clean_message:
+                clean_message = "Merhaba! Ben Sesly Bot. Bu toplantiyi kaydediyorum."
+
+            # 1. Chat panelini aç
             chat_btn_clicked = False
             try:
-                # "Herkesle sohbet et" butonu
-                chat_btns = self.driver.find_elements(By.XPATH, "//button[contains(@aria-label, 'chat') or contains(@aria-label, 'sohbet')]")
+                chat_btns = self.driver.find_elements(By.XPATH,
+                    "//button[contains(@aria-label, 'chat') or contains(@aria-label, 'sohbet') or contains(@aria-label, 'Chat')]"
+                )
                 for btn in chat_btns:
                     if btn.is_displayed():
                         if btn.get_attribute("aria-pressed") != "true":
                             btn.click()
-                            await asyncio.sleep(1)
+                            await asyncio.sleep(1.5)
                         chat_btn_clicked = True
                         break
-            except: pass
-            
-            if not chat_btn_clicked:
-                logger.warning("Chat butonu bulunamadı, textarea aranıyor...")
-
-            # 2. Mesaj alanını bul ve yaz
-            try:
-                # Farklı element tiplerini dene
-                input_selectors = [
-                    "textarea",
-                    "input[type='text']",
-                    "div[contenteditable='true']",
-                    "[data-placeholder*='mesaj']",
-                    "[data-placeholder*='message']",
-                    "[placeholder*='İleti']",
-                    "[placeholder*='Send']"
-                ]
-                
-                message_input = None
-                for selector in input_selectors:
-                    try:
-                        elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
-                        for el in elements:
-                            if el.is_displayed():
-                                message_input = el
-                                logger.info(f"✅ Mesaj alanı bulundu: {selector}")
-                                break
-                        if message_input:
-                            break
-                    except: continue
-                
-                if not message_input:
-                    # Son çare: WebDriverWait ile textarea bekle
-                    message_input = WebDriverWait(self.driver, 5).until(
-                        EC.presence_of_element_located((By.TAG_NAME, "textarea"))
-                    )
-                
-                message_input.click()
-                await asyncio.sleep(0.3)
-                
-                # Temizle ve yaz
-                try:
-                    message_input.clear()
-                except: pass
-                
-                message_input.send_keys(message)
-                await asyncio.sleep(0.5)
-                message_input.send_keys(Keys.ENTER)
-                logger.info("✅ Mesaj gönderildi.")
-                
-                # Chat panelini kapat (ekran sağ alta kaymaması için)
-                await asyncio.sleep(1)
-                try:
-                    # Chat butonu tekrar bas (toggle)
-                    for btn in chat_btns:
-                        if btn.is_displayed() and btn.get_attribute("aria-pressed") == "true":
-                            btn.click()
-                            logger.info("🔽 Chat paneli kapatıldı")
-                            break
-                except: pass
-                
             except Exception as e:
-                logger.error(f"Mesaj yazma hatası: {e}")
+                logger.warning(f"Chat buton hatası: {e}")
+
+            if not chat_btn_clicked:
+                logger.warning("Chat butonu bulunamadı, input direkt aranıyor...")
+
+            await asyncio.sleep(1)
+
+            # 2. Mesaj alanını bul ve focus al
+            input_selectors = [
+                "textarea[placeholder*='Send']",
+                "textarea[placeholder*='İlet']",
+                "textarea[placeholder*='mesaj']",
+                "textarea",
+                "div[contenteditable='true'][data-placeholder]",
+                "div[contenteditable='true']",
+                "input[type='text']",
+            ]
+
+            message_input = None
+            used_selector = None
+            for selector in input_selectors:
+                try:
+                    elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                    for el in elements:
+                        if el.is_displayed():
+                            message_input = el
+                            used_selector = selector
+                            logger.info(f"Mesaj alanı bulundu: {selector}")
+                            break
+                    if message_input:
+                        break
+                except:
+                    continue
+
+            if not message_input:
+                logger.error("❌ Mesaj alanı bulunamadı!")
+                return
+
+            # Focus
+            message_input.click()
+            await asyncio.sleep(0.5)
+
+            # 3. Mesajı yaz — önce xdotool, sonra xclip, sonra send_keys fallback
+            sent = False
+
+            # STRATEJI 1: xdotool (Linux X11 sistem klavyesi — isTrusted:true)
+            if IS_LINUX and shutil.which("xdotool"):
+                try:
+                    logger.info("xdotool ile mesaj yazılıyor (Meet)...")
+                    # Önce mevcut içeriği temizle
+                    message_input.send_keys(Keys.CONTROL, 'a')
+                    await asyncio.sleep(0.2)
+                    result = subprocess.run(
+                        ["xdotool", "type", "--clearmodifiers", "--delay", "50", clean_message],
+                        capture_output=True, text=True, timeout=30
+                    )
+                    logger.info(f"xdotool: rc={result.returncode}, err={result.stderr[:80]}")
+                    await asyncio.sleep(0.5)
+                    # Send_keys Enter ile gönder
+                    message_input.send_keys(Keys.RETURN)
+                    await asyncio.sleep(0.5)
+                    sent = True
+                    logger.info("✅ Mesaj gönderildi (xdotool + Enter).")
+                except Exception as e:
+                    logger.warning(f"xdotool hatası: {e}")
+
+            # STRATEJI 2: xclip + Ctrl+V
+            if not sent and IS_LINUX and shutil.which("xclip"):
+                try:
+                    logger.info("xclip ile clipboard yazılıyor (Meet)...")
+                    subprocess.run(
+                        ["xclip", "-selection", "clipboard"],
+                        input=clean_message.encode("utf-8"),
+                        capture_output=True, timeout=10
+                    )
+                    await asyncio.sleep(0.3)
+                    message_input.click()
+                    await asyncio.sleep(0.2)
+                    message_input.send_keys(Keys.CONTROL, 'a')
+                    await asyncio.sleep(0.1)
+                    message_input.send_keys(Keys.CONTROL, 'v')
+                    await asyncio.sleep(0.5)
+                    message_input.send_keys(Keys.RETURN)
+                    sent = True
+                    logger.info("✅ Mesaj gönderildi (xclip + Ctrl+V + Enter).")
+                except Exception as e:
+                    logger.warning(f"xclip hatası: {e}")
+
+            # STRATEJI 3: send_keys fallback (textarea için yeterli olabilir)
+            if not sent:
+                try:
+                    logger.info("send_keys fallback (Meet)...")
+                    try:
+                        message_input.clear()
+                    except:
+                        pass
+                    message_input.send_keys(clean_message)
+                    await asyncio.sleep(0.5)
+                    message_input.send_keys(Keys.RETURN)
+                    sent = True
+                    logger.info("✅ Mesaj gönderildi (send_keys + Enter).")
+                except Exception as e:
+                    logger.error(f"send_keys hatası: {e}")
+
+            if not sent:
+                logger.error("❌ Tüm mesaj stratejileri başarısız!")
+
+            # Chat panelini kapat
+            await asyncio.sleep(1)
+            try:
+                for btn in self.driver.find_elements(By.XPATH,
+                    "//button[contains(@aria-label, 'chat') or contains(@aria-label, 'sohbet')]"
+                ):
+                    if btn.is_displayed() and btn.get_attribute("aria-pressed") == "true":
+                        btn.click()
+                        logger.info("🔽 Chat paneli kapatıldı")
+                        break
+            except:
+                pass
 
         except Exception as e:
             logger.error(f"Send message hatası: {e}")
+
+
 
     async def open_participants_panel(self):
         """Katılımcı panelini açar (Gelişmiş - Tüm konumlar: sağ üst, sağ alt, toolbar)."""

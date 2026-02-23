@@ -23,6 +23,9 @@ from urllib.parse import urlparse, parse_qs
 import re
 from dotenv import load_dotenv
 
+# Celery task queue
+from tasks import process_meeting
+
 load_dotenv(override=True)
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -51,9 +54,10 @@ load_dotenv(override=True)
 
 API_KEY = os.getenv("GEMINI_API_KEY")
 if not API_KEY:
-    raise ValueError("GEMINI_API_KEY bulunamadı! .env dosyasını kontrol edin.")
+    print("[WARN] GEMINI_API_KEY bulunamadı! Transkripsiyon devre dışı.")
+else:
+    genai.configure(api_key=API_KEY, transport="rest")
 MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-genai.configure(api_key=API_KEY, transport="rest")
 
 
 # Lifespan event handler (modern FastAPI pattern)
@@ -1088,6 +1092,21 @@ async def start_bot(payload: dict = Body(...)):
     # Bot ismi sabit
     bot_name = "Sesly Bot"
     
+    # GUARD: Aktif bot varsa yeni görev oluşturma
+    if BOT_TASK_FILE.exists():
+        try:
+            existing = json.loads(BOT_TASK_FILE.read_text(encoding="utf-8"))
+            if existing.get("active", False):
+                return {"ok": False, "error": "Bot zaten aktif! Önce mevcut botu durdurun."}
+        except:
+            pass
+    
+    # Worker status'u sıfırla (eski timestamp stale check'i tetiklemesin)
+    worker_status_file = Path("data/worker_status.json")
+    try:
+        ws = {"running": False, "recording": False, "status_message": "Başlatılıyor...", "timestamp": time.time()}
+        worker_status_file.write_text(json.dumps(ws, ensure_ascii=False), encoding="utf-8")
+    except: pass
 
 
     # Eski verileri temizle (Stale transcript önlemek için)
@@ -1130,16 +1149,31 @@ async def start_bot(payload: dict = Body(...)):
         task["meeting_id"] = ""
         task["passcode"] = ""
     
-    # Task'i kaydet (data/ klasöründe)
+    # Task'i kaydet (data/ klasöründe - geriye uyumluluk için)
     BOT_TASK_FILE.write_text(json.dumps(task, ensure_ascii=False), encoding="utf-8")
     
     print(f"[{platform.upper()}] Yeni görev oluşturuldu:", task)
+    
+    # CELERY TASK QUEUE: Redis üzerinden worker'a gönder
+    task_id = str(uuid.uuid4())
+    try:
+        celery_task = process_meeting.delay(
+            task_id=task_id,
+            meeting_url=meeting_url,
+            platform=platform,
+            user_id=user_id or "guest"
+        )
+        print(f"[CELERY] Task kuyruğa eklendi: {celery_task.id}")
+    except Exception as e:
+        print(f"[CELERY ERROR] Task gönderilemedi: {e}")
+        # Celery bağlantısı yoksa eski yönteme devam (geriye uyumluluk)
     
     return {
         "ok": True,
         "platform": platform,
         "meeting_url": meeting_url,
         "bot_id": task.get("meeting_id", meeting_url[:20]),
+        "task_id": task_id,
         "message": f"{platform.capitalize()} toplantısına katılma görevi oluşturuldu"
     }
 
@@ -1166,8 +1200,23 @@ async def bot_status():
         worker_status_file = Path("data/worker_status.json")
         if worker_status_file.exists():
             worker = json.loads(worker_status_file.read_text(encoding="utf-8"))
-            # STALE CHECK KALDIRILDI: Kullanıcı isteği üzerine.
-            # Worker bir yerde takılsa bile UI "Running" kalsın.
+            
+            # STALE CHECK: Heartbeat 60 saniyeden eskiyse bot ölmüş demektir
+            # (Docker restart, crash vb. durumları yakalar)
+            # AMA: Task yeni oluşturulmuşsa (120s içinde) stale check YAPMA
+            # — worker henüz heartbeat güncellememiş olabilir
+            task_age = time.time() - task.get("timestamp", 0)
+            if worker.get("running", False) and task_age > 120:
+                last_heartbeat = worker.get("timestamp", 0)
+                stale_seconds = time.time() - last_heartbeat
+                if stale_seconds > 60:
+                    logger.warning(f"⚠️ Bot heartbeat {stale_seconds:.0f}s eski — bot ölmüş, durum sıfırlanıyor.")
+                    # Durumu sıfırla
+                    worker = {"running": False, "recording": False, "status_message": "Bot beklenmedik şekilde durdu", "platform": worker.get("platform", ""), "timestamp": time.time()}
+                    worker_status_file.write_text(json.dumps(worker, ensure_ascii=False), encoding="utf-8")
+                    # Task dosyasını da sıfırla
+                    BOT_TASK_FILE.write_text("{}", encoding="utf-8")
+                    task = {"active": False}
         else:
             worker = {"running": False, "recording": False}
 
@@ -1200,6 +1249,41 @@ async def bot_status():
 
     except Exception as e:
         return {"task": {"active": False}, "worker": {}, "error": str(e)}
+
+
+@app.post("/force-reset")
+async def force_reset():
+    """Bot durumunu zorla sıfırla (worker ölü ama task active kaldıysa)."""
+    try:
+        BOT_TASK_FILE.write_text("{}", encoding="utf-8")
+        worker_status_file = Path("data/worker_status.json")
+        worker_status_file.write_text(
+            json.dumps({"running": False, "recording": False, "status_message": "Sıfırlandı", "timestamp": time.time()}, ensure_ascii=False),
+            encoding="utf-8"
+        )
+        # Eski komut dosyasını da temizle
+        if BOT_COMMAND_FILE.exists():
+            BOT_COMMAND_FILE.unlink()
+        logger.info("[FORCE-RESET] Bot durumu zorla sıfırlandı.")
+        return {"ok": True, "message": "Bot durumu sıfırlandı"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/clear-worker-error")
+async def clear_worker_error():
+    """Worker hata mesajını temizle (UI'da bir kere gösterdikten sonra)."""
+    try:
+        worker_status_file = Path("data/worker_status.json")
+        if worker_status_file.exists():
+            ws = json.loads(worker_status_file.read_text(encoding="utf-8"))
+            ws.pop("error", None)
+            worker_status_file.write_text(json.dumps(ws, ensure_ascii=False), encoding="utf-8")
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 
 # =========================================================
 # BOT COMMAND SYSTEM
@@ -1263,11 +1347,30 @@ async def bot_command(payload: dict = Body(...)):
     save_bot_command(command)
     
     # STOP KOMUTU GELDİYSE: Worker kendi raporunu oluşturacak, burada YAPMA!
-    # NOT: Önceden burada generate_meeting_report() çağrılıyordu ama bu
-    # worker'daki rapor üretimiyle çakışarak ÇİFT RAPOR oluşturuyordu.
-    # Rapor üretimi sadece worker'da yapılmalı (teams_web_worker.py / zoom_web_worker.py)
+    # AMA: bot_task.json'ı HEMEN sıfırla — UI "Bot Aktif" göstermeyi bıraksın.
+    # Worker'ın finally bloğu bazen çalışmayabilir (crash, timeout vs.)
     if command == "stop":
         print("[STOP] Komut alındı. Rapor worker tarafından oluşturulacak.")
+        # Task dosyasını pasife çek (UI hemen güncellenir)
+        try:
+            if BOT_TASK_FILE.exists():
+                t = json.loads(BOT_TASK_FILE.read_text(encoding="utf-8"))
+                t["active"] = False
+                BOT_TASK_FILE.write_text(json.dumps(t, indent=2, ensure_ascii=False), encoding="utf-8")
+                print("[STOP] bot_task.json active=false yapıldı.")
+        except Exception as e:
+            print(f"[STOP] bot_task.json sıfırlama hatası: {e}")
+        # Worker status'u güncelle
+        try:
+            worker_status_file = Path("data/worker_status.json")
+            if worker_status_file.exists():
+                ws = json.loads(worker_status_file.read_text(encoding="utf-8"))
+                ws["running"] = False
+                ws["status_message"] = "Bot durduruluyor..."
+                ws["timestamp"] = time.time()
+                worker_status_file.write_text(json.dumps(ws, ensure_ascii=False), encoding="utf-8")
+        except Exception as e:
+            print(f"[STOP] worker_status.json güncelleme hatası: {e}")
     
     messages = {
         "pause": "Kayıt duraklatma komutu gönderildi",
@@ -1553,6 +1656,14 @@ async def root(request: Request):
         "SUPABASE_ANON_KEY": SUPABASE_KEY
     })
 
+@app.get("/reset-password")
+async def reset_password_page(request: Request):
+    return templates.TemplateResponse("reset-password.html", {
+        "request": request,
+        "SUPABASE_URL": SUPABASE_URL,
+        "SUPABASE_ANON_KEY": SUPABASE_KEY
+    })
+
 @app.get("/admin")
 async def admin_page(request: Request):
     return templates.TemplateResponse("index.html", {
@@ -1633,7 +1744,7 @@ if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
         "server:app",  
-        host="127.0.0.1",
+        host="0.0.0.0",
         port=9000,
         reload=True
     )

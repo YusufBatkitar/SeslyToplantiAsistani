@@ -9,6 +9,12 @@ import gzip
 import logging
 from pathlib import Path
 
+# Platform abstraction
+from platform_utils import IS_WINDOWS, IS_LINUX, setup_display
+
+# Linux'ta display ayarla
+setup_display()
+
 # Logger Setup
 logger = logging.getLogger("TeamsWebClient")
 logger.setLevel(logging.INFO)
@@ -29,28 +35,66 @@ class TeamsWebBot:
         self.waiting_start_time = None
         self.is_running = False
         self.end_reason = None  # Toplantı sona erme sebebi (normal/invalid link)
+        self._no_controls_count = 0  # Hangup butonu kaybı sayacı
+        self._meeting_url_at_join = None  # Join anındaki URL (değişim tespiti için)
+
+    def _convert_to_web_url(self, url):
+        """Teams URL'ini web client formatına çevir (launcher bypass)."""
+        import urllib.parse
+        
+        # Launcher URL'inden gerçek meeting URL'ini çıkar
+        # teams.live.com/dl/launcher/launcher.html?url=/...&type=meet
+        if 'launcher.html' in url or '/dl/launcher' in url:
+            parsed = urllib.parse.urlparse(url)
+            params = urllib.parse.parse_qs(parsed.query)
+            
+            if 'url' in params:
+                # Encoded URL'i çöz: /_#/meet/9363193680293?p=xxx&anon=true
+                inner_path = urllib.parse.unquote(params['url'][0])
+                # Doğrudan web client URL'i oluştur
+                web_url = f"https://teams.live.com{inner_path}"
+                logger.info(f"URL dönüştürüldü: launcher → {web_url}")
+                return web_url
+        
+        # teams.microsoft.com/l/meetup-join formatı → olduğu gibi bırak
+        # (Playwright zaten yönlendirir)
+        return url
 
     async def start(self):
         """Playwright ve tarayıcıyı başlatır."""
         logger.info("Playwright başlatılıyor...")
         self.playwright = await async_playwright().start()
         
-        # VPS için headless=True çok daha performanslıdır.
-        # Ancak ses yakalamak için bazen headful gerekebilir.
-        # Şimdilik headless=False yapıyoruz ki ses/video izinleri easier olsun (veya debug için).
-        # Sistem sesini yakalamak için ekranda bir şeylerin oynaması gerekebilir.
+        # Platform-specific browser args
+        browser_args = [
+            "--use-fake-ui-for-media-stream",  # Kamera/Mikrofon izinlerini atla
+            "--disable-notifications",
+        ]
+        
+        if IS_LINUX:
+            # Linux headless mode
+            browser_args.extend([
+                "--headless=new",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--window-size=1920,1080"
+            ])
+            headless_mode = False  # Xvfb ile headful mod (speaker detection için)
+            viewport_size = {"width": 1920, "height": 1080}
+        else:
+            browser_args.append("--window-size=1280,800")
+            headless_mode = False
+            viewport_size = {"width": 1280, "height": 800}
+        
         self.browser = await self.playwright.chromium.launch(
-            headless=False,
-            args=[
-                "--use-fake-ui-for-media-stream",  # Kamera/Mikrofon izinlerini atla
-                "--disable-notifications",
-                "--window-size=1280,800" # Pencere boyutunu sabitle
-            ]
+            headless=headless_mode,
+            args=browser_args
         )
         
         self.context = await self.browser.new_context(
-            viewport={"width": 1280, "height": 800}, # İçerik boyutunu pencereyle eşle
-            permissions=["microphone", "camera"],
+            viewport=viewport_size,  # Platform'a göre ayarlandı
+            permissions=["microphone", "camera", "clipboard-read", "clipboard-write"],
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         )
         
@@ -90,24 +134,23 @@ class TeamsWebBot:
         
         self.is_running = True
         
-
-        
-        # Pencereyi ÖNE GETİR (Windows API ile Zorla)
-        try:
-            await self.page.bring_to_front()
-            
-            # Browser PID'sini al
-            pid = self.browser_process_pid()
-            if pid:
-                self._bring_to_front_force(pid)
-            else:
-                # PID yoksa başlığa göre dene
-                await asyncio.sleep(1) # Başlığın gelmesini bekle
-                self._bring_to_front_force(target_title="Teams")
+        # Pencereyi ÖNE GETİR (Sadece Windows'ta - Linux'ta headless)
+        if not IS_LINUX:
+            try:
+                await self.page.bring_to_front()
                 
-        except Exception as e:
-            logger.warning(f"Pencere öne getirme hatası: {e}")
-            pass
+                # Browser PID'sini al
+                pid = self.browser_process_pid()
+                if pid:
+                    self._bring_to_front_force(pid)
+                else:
+                    # PID yoksa başlığa göre dene
+                    await asyncio.sleep(1) # Başlığın gelmesini bekle
+                    self._bring_to_front_force(target_title="Teams")
+                    
+            except Exception as e:
+                logger.warning(f"Pencere öne getirme hatası: {e}")
+                pass
             
         logger.info("Tarayıcı hazır ve öne getirildi.")
 
@@ -123,7 +166,10 @@ class TeamsWebBot:
             return None
 
     def _bring_to_front_force(self, pid=None, target_title=None):
-        """Windows API kullanarak pencereyi zorla öne getirir."""
+        """Windows API kullanarak pencereyi zorla öne getirir. Linux'ta no-op."""
+        if IS_LINUX:
+            return  # Headless modda gerek yok
+        
         try:
             import win32gui
             import win32con
@@ -219,34 +265,39 @@ class TeamsWebBot:
     async def join_meeting(self):
         """Toplantıya katılım akışı."""
         try:
-            logger.info(f"Linke gidiliyor: {self.meeting_url}")
-            await self.page.goto(self.meeting_url, wait_until="networkidle")
+            # Teams URL'ini web client formatına çevir
+            web_url = self._convert_to_web_url(self.meeting_url)
+            logger.info(f"Linke gidiliyor: {web_url}")
+            await self.page.goto(web_url, wait_until="networkidle", timeout=30000)
             
-            # Sayfa yüklendikten sonra TEKRAR öne getirmeyi dene (Başlık değiştiği için)
-            # "Görüşmeye katıl" veya "Join conversation" başlıklarını yakalar
-            self._bring_to_front_force(target_title=("Teams", "Microsoft Teams", "Görüşmeye katıl", "Join"))
+            # Sayfa yüklendikten sonra TEKRAR öne getirmeyi dene (Sadece Windows)
+            if not IS_LINUX:
+                self._bring_to_front_force(target_title=("Teams", "Microsoft Teams", "Görüşmeye katıl", "Join"))
 
             # POPUP ENGELLEME: "Microsoft Teams açılsın mı?" penceresi için ESC bas
             # Bu native bir dialog olduğu için selector ile seçilemez.
             # Playwright keyboard.press yetmeyebilir, OS seviyesinde basacağız.
             try:
-                logger.info("Olası popup için bekleniyor ve OS seviyesinde ESC basılacak...")
-                await asyncio.sleep(2) # 3s -> 2s
+                logger.info("Olası popup için bekleniyor...")
+                await asyncio.sleep(2)
                 
-                import ctypes
-                user32 = ctypes.windll.user32
-                VK_ESCAPE = 0x1B
+                if IS_LINUX:
+                    # Linux/Docker: Playwright keyboard ESC
+                    for i in range(3):
+                        await self.page.keyboard.press("Escape")
+                        logger.info(f"ESC basıldı ({i+1}/3) [Playwright]")
+                        await asyncio.sleep(0.5)
+                else:
+                    # Windows: OS seviyesinde ESC
+                    import ctypes
+                    user32 = ctypes.windll.user32
+                    VK_ESCAPE = 0x1B
+                    for i in range(3):
+                        user32.keybd_event(VK_ESCAPE, 0, 0, 0)
+                        user32.keybd_event(VK_ESCAPE, 0, 2, 0)
+                        logger.info(f"ESC basıldı ({i+1}/3) [OS]")
+                        await asyncio.sleep(0.5)
                 
-                # Garanti olsun diye birkaç kez ESC bas (OS Level)
-                for i in range(3):
-                    # Key Down
-                    user32.keybd_event(VK_ESCAPE, 0, 0, 0)
-                    # Key Up
-                    user32.keybd_event(VK_ESCAPE, 0, 2, 0)
-                    
-                    logger.info(f"ESC basıldı ({i+1}/3)")
-                    await asyncio.sleep(0.5) # 1.5s -> 0.5s (Daha seri)
-                    
                 logger.info("Popup için ESC komutları gönderildi.")
             except Exception as e:
                 logger.warning(f"ESC basma hatası: {e}")
@@ -256,25 +307,66 @@ class TeamsWebBot:
             await asyncio.sleep(1) # 2s -> 1s (Daha hızlı)
             
             try:
-                # Buton: "Bu tarayıcıda devam et" veya "Continue on this browser"
-                # data-tid="joinOnWeb" en güvenilir selector
-                web_join_btn = self.page.locator("button[data-tid='joinOnWeb']")
+                # === LAUNCHER BYPASS ===
+                # Teams linki genellikle launcher.html'e redirect ediyor
+                # Buton tıklamak yerine, URL'den meeting path'ini çıkarıp doğrudan gideceğiz
                 
-                # Eğer data-tid ile bulamazsa metinle dene (TR/EN - CSS OR Selector)
-                if await web_join_btn.count() == 0:
-                     # CSS virgül (,) operatörü OR anlamına gelir.
-                     web_join_btn = self.page.locator('button:has-text("Bu tarayıcıda"), button:has-text("Continue on this browser"), button:has-text("Use the web app")').first
-
-                if await web_join_btn.is_visible(timeout=10000):
-                    # Force click bazen overlay varsa işe yarar
-                    await web_join_btn.click(force=True)
-                    logger.info("Web ile katıl butonu tıklandı. Yönlendirme bekleniyor...")
-                    await asyncio.sleep(5) # Sayfa yenilenmesi/yüklenmesi için bekle
+                current_url = self.page.url
+                logger.info(f"Mevcut URL: {current_url}")
+                
+                if 'launcher' in current_url:
+                    logger.info("Launcher sayfasında tespit edildi. Doğrudan web client'a yönlendiriliyor...")
+                    
+                    # URL'den meeting path'ini çıkar
+                    import urllib.parse
+                    parsed = urllib.parse.urlparse(current_url)
+                    params = urllib.parse.parse_qs(parsed.query)
+                    
+                    if 'url' in params:
+                        inner_path = urllib.parse.unquote(params['url'][0])
+                        direct_url = f"https://teams.live.com{inner_path}"
+                        logger.info(f"Doğrudan URL'e gidiliyor: {direct_url}")
+                        await self.page.goto(direct_url, wait_until="networkidle", timeout=30000)
+                        await asyncio.sleep(2)
+                        
+                        # Hala launcher'da mı kontrol et
+                        if 'launcher' in self.page.url:
+                            logger.warning("Hala launcher'da! Alternatif yöntem deneniyor...")
+                            # a[href] ile sayfadaki web join linkini bul
+                            try:
+                                web_links = self.page.locator("a[href*='teams.live.com'], a[href*='teams.microsoft.com']")
+                                count = await web_links.count()
+                                for i in range(count):
+                                    href = await web_links.nth(i).get_attribute("href")
+                                    if href and 'launcher' not in href:
+                                        logger.info(f"Alternatif link bulundu: {href}")
+                                        await self.page.goto(href, wait_until="networkidle", timeout=30000)
+                                        break
+                            except: pass
+                    else:
+                        # Fallback: Buton tıklama
+                        web_join_btn = self.page.locator(
+                            "button[data-tid='joinOnWeb'], "
+                            "a[data-tid='joinOnWeb'], "
+                            'button:has-text("Bu tarayıcıda"), '
+                            'button:has-text("Continue on this browser"), '
+                            'button:has-text("Use the web app"), '
+                            'a:has-text("Bu tarayıcıda"), '
+                            'a:has-text("Continue on this browser"), '
+                            'a:has-text("Use the web app instead"), '
+                            'a:has-text("Use the web app")'
+                        ).first
+                        
+                        if await web_join_btn.is_visible(timeout=10000):
+                            await web_join_btn.click(force=True)
+                            logger.info("Web ile katıl butonu/linki tıklandı.")
+                            await asyncio.sleep(5)
+                        
                 else:
-                    logger.warning("Web join butonu bulunamadı (zaten geçilmiş olabilir).")
-
+                    logger.info("Launcher bypass gerekmedi, doğrudan pre-join sayfasında.")
+                    
             except Exception as e:
-                logger.warning(f"Web join butonu hatası: {e}")
+                logger.warning(f"Web join/launcher bypass hatası: {e}")
 
             # 2. Pre-Join Ekranı (İsim Girme & AV Ayarları)
             logger.info("Pre-join ekranı bekleniyor...")
@@ -283,9 +375,25 @@ class TeamsWebBot:
             name_input = None
             try:
                 logger.info("İsim alanı aranıyor (Adınızı yazın)...")
-                # 1. data-tid (Standart)
-                # 2. Placeholder (TR/EN) - Case sensitive olabilir, o yüzden tam metin ekledim.
-                # 3. Generic Text Input (Sayfada genelde tek input olur)
+                
+                # SVG overlay'i kaldır (Teams arka plan logosu tıklamaları engelliyor)
+                try:
+                    await self.page.evaluate("""
+                        // data-portal-node overlay'lerini kaldır
+                        document.querySelectorAll('[data-portal-node="true"] svg, [data-portal-node="true"] path').forEach(el => {
+                            el.style.pointerEvents = 'none';
+                        });
+                        // Tüm SVG path'lerinin pointer-events'ini kapat
+                        document.querySelectorAll('path[fill="#464775"]').forEach(el => {
+                            el.closest('div').style.pointerEvents = 'none';
+                        });
+                    """)
+                    logger.info("SVG overlay pointer-events devre dışı bırakıldı.")
+                except:
+                    pass
+                
+                await asyncio.sleep(1)
+                
                 name_input = self.page.locator(
                     "input[data-tid='prejoin-display-name-input'], "
                     "input[placeholder='Adınızı yazın'], "
@@ -297,12 +405,24 @@ class TeamsWebBot:
                 # Inputun görünmesini bekle
                 await name_input.wait_for(state="visible", timeout=10000)
                 
-                # Temizle ve yaz
-                await name_input.click() 
-                await name_input.fill(self.bot_name)
-                # Enter basarak onayla (Bazen butonu aktifleştirir)
-                await name_input.press("Enter")
-                logger.info(f"İsim girildi: {self.bot_name}")
+                # JavaScript ile isim gir (SVG overlay click'i engelleyebilir)
+                try:
+                    await name_input.fill(self.bot_name, force=True)
+                    logger.info(f"İsim girildi (fill): {self.bot_name}")
+                except:
+                    # Fallback: JavaScript ile doğrudan değer ata
+                    await self.page.evaluate(f"""
+                        const input = document.querySelector("input[data-tid='prejoin-display-name-input']") || 
+                                      document.querySelector("input[placeholder='Type your name']") ||
+                                      document.querySelector("input[type='text']");
+                        if (input) {{
+                            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                            nativeInputValueSetter.call(input, '{self.bot_name}');
+                            input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                            input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                        }}
+                    """)
+                    logger.info(f"İsim girildi (JS): {self.bot_name}")
 
             except Exception as e:
                 logger.warning(f"İsim girme hatası (Kritik değil, devam ediliyor): {e}")
@@ -478,7 +598,6 @@ class TeamsWebBot:
             # Selectors:
             # 1. data-tid='prejoin-join-button' (Standart)
             # 2. Text: "Şimdi katıl", "Join now", "Katıl", "Join" (Genişletilmiş)
-            # 3. Class içeren: 'join-btn' (Bazen classlarda olur)
             
             join_btn = self.page.locator(
                 "button[data-tid='prejoin-join-button'], "
@@ -490,17 +609,28 @@ class TeamsWebBot:
             
             logger.info("Katıl butonu aranıyor (Genişletilmiş arama)...")
             
-            # Debug screenshot kaldırıldı
-            
-            # CRITICAL FIX: is_visible beklemez, anlık kontrol eder. wait_for kullanmalıyız.
-            # CRITICAL FIX: is_visible beklemez, anlık kontrol eder. wait_for kullanmalıyız.
             try:
                 # Butonun görünür olmasını bekle
                 await join_btn.wait_for(state="visible", timeout=30000)
                 await join_btn.scroll_into_view_if_needed()
                 
+                # SVG overlay'i TEKRAR kaldır (sayfa değişmiş olabilir)
+                try:
+                    await self.page.evaluate("""
+                        document.querySelectorAll('[data-portal-node="true"]').forEach(el => {
+                            el.style.pointerEvents = 'none';
+                        });
+                        document.querySelectorAll('path, svg').forEach(el => {
+                            el.style.pointerEvents = 'none';
+                        });
+                    """)
+                except: pass
+                
+                await asyncio.sleep(0.5)
+                
                 # RETRY LOGIC (3 Kere Dene)
                 clicked_successfully = False
+                in_lobby_early = False  # Tıklama sırasında lobi tespit edilirse True
                 
                 # Lobide olup olmadığımızı anlayacak metinler
                 lobby_indicators = (
@@ -513,10 +643,10 @@ class TeamsWebBot:
                      "*:has-text('Lobi'), "
                      "*:has-text('yakında'), "
                      "*:has-text('bildireceğiz'), "
-                     "*:has-text('almasını'), " # "Birisinin sizi almasını bekliyor"
+                     "*:has-text('almasını'), "
                      "*:has-text('ev sahibi'), "
-                     "*:has-text('içeri alacak'), " # New from screenshot
-                     "*:has-text('Kısa sürede'), "  # New from screenshot
+                     "*:has-text('içeri alacak'), "
+                     "*:has-text('Kısa sürede'), "
                      "*:has-text('Waiting for people'), "
                      "*:has-text('let you in')"
                 )
@@ -524,7 +654,29 @@ class TeamsWebBot:
                 for attempt in range(3):
                     try:
                         logger.info(f"'Katıl' butonuna basılıyor (Deneme {attempt+1}/3)...")
-                        await join_btn.click(force=True)
+                        
+                        # BİRİNCİL: JavaScript doğrudan DOM click
+                        # SVG overlay force=True ile bile event'leri yutuyor
+                        # JS click overlay'i tamamen bypass eder
+                        js_clicked = await self.page.evaluate("""
+                            const btn = document.querySelector("button[data-tid='prejoin-join-button']") ||
+                                        Array.from(document.querySelectorAll('button')).find(b => 
+                                            /join now|şimdi katıl|katıl|join/i.test(b.textContent.trim()));
+                            if (btn) {
+                                btn.click();
+                                btn.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true}));
+                                true;
+                            } else {
+                                false;
+                            }
+                        """)
+                        
+                        if js_clicked:
+                            logger.info("✅ JavaScript click gönderildi.")
+                        else:
+                            # YEDEK: Playwright force click
+                            logger.warning("JS buton bulamadı, force click deneniyor...")
+                            await join_btn.click(force=True, timeout=5000)
                         
                         # Tıkladıktan sonra butonun kaybolmasını veya URL'in değişmesini bekle
                         await asyncio.sleep(5)
@@ -539,6 +691,7 @@ class TeamsWebBot:
                         if await self.page.locator(lobby_indicators).first.is_visible():
                              logger.info("✅ Lobi/Bekleme yazıları tespit edildi (Tıklama başarılı).")
                              clicked_successfully = True
+                             in_lobby_early = True
                              break
                         
                         logger.warning("⚠️ Buton hala görünür ve lobi yazısı yok, tekrar denenecek...")
@@ -562,7 +715,6 @@ class TeamsWebBot:
             try:
                 logger.info("Katılım isteği gönderildi, bağlantı bekleniyor...")
                 # UI'ın tepki vermesi için kısa bir süre tanı
-                # UI Uyandırma (Mouse Move) - Kontrollerin görünmesi için
                 try:
                     await self.page.mouse.move(500, 500)
                     await asyncio.sleep(0.5)
@@ -571,53 +723,53 @@ class TeamsWebBot:
 
                 # Mevcut URL'i logla
                 logger.info(f"Verification Check URL: {self.page.url}")
-
-                # Başarı veya Bekleme Odası Göstergeleri
-                # 1. Toplantı İçi: Toolbar butonları (Hangup, Mic, Leave) veya Video/Canvas elemanları
-                #    EK: Sohbet ve Kişiler butonları (Top bar'da sabit)
-                # 2. Bekleme Odası: "Someone in the meeting...", "sizi içeri almalı"
                 
-                check_selector = (
-                    "button[data-tid='hangup-button'], "
-                    "button[data-tid='microphone-mute-button'], "
-                    "div[data-tid='call-controls'], "
-                    "button[aria-label='Leave'], "
-                    "button[aria-label='Ayrıl'], "
-                    "button[aria-label='Sohbet'], button[aria-label='Chat'], "  # Chat btn
-                    "button[aria-label='Kişiler'], button[aria-label='People'], " # People btn
-                    "video, canvas, "  # Generic video/display elements
-                    "ul[role='list'], " # Participant list potential
-                    "*:has-text('Someone in the meeting should let you in soon'), "
-                    "*:has-text('Toplantıdaki birisi sizi'), "
-                    "*:has-text('sizi içeri almalı'), "
-                    "*:has-text('kabul edilmeyi'), "
-                    "*:has-text('lobide'), "
-                    "*:has-text('almasını'), "
-                    "*:has-text('ev sahibi'), "
-                    "*:has-text('yakında'), "
-                    "*:has-text('içeri alacak'), "
-                    "*:has-text('Kısa sürede'), "
-                    "*:has-text('Waiting for people in the meeting to let you in')"
-                )
-                
-                # İlk bağlantı için 60sn bekle (Ağ yavaşlığı vs.)
-                first_indicator = self.page.locator(check_selector).first
-                await first_indicator.wait_for(state="visible", timeout=60000)
-                
-                # Şimdi ne gördüğümüze bakalım
-                content_text = await self.page.content()
-                in_lobby = ("Someone in the meeting" in content_text) or \
-                           ("sizi içeri almalı" in content_text) or \
-                           ("Toplantıdaki birisi sizi" in content_text) or \
-                           ("kabul edilmeyi" in content_text) or \
-                           ("lobide" in content_text) or \
-                           ("almasını" in content_text) or \
-                           ("ev sahibi" in content_text) or \
-                           ("yakında" in content_text) or \
-                           ("içeri alacak" in content_text) or \
-                           ("Kısa sürede" in content_text) or \
-                           ("Waiting for people" in content_text) or \
-                           ("let you in" in content_text)
+                # Eğer tıklama sırasında lobi zaten tespit edildiyse, check_selector'ı atla
+                if in_lobby_early:
+                    logger.info("Lobi tıklama sırasında tespit edilmişti, doğrudan bekleme döngüsüne geçiliyor...")
+                    in_lobby = True
+                else:
+                    # Başarı veya Bekleme Odası Göstergeleri
+                    check_selector = (
+                        "button[data-tid='hangup-button'], "
+                        "button[data-tid='microphone-mute-button'], "
+                        "div[data-tid='call-controls'], "
+                        "button[aria-label='Leave'], "
+                        "button[aria-label='Ayrıl'], "
+                        "button[aria-label='Sohbet'], button[aria-label='Chat'], "
+                        "button[aria-label='Kişiler'], button[aria-label='People'], "
+                        "video, canvas, "
+                        "ul[role='list']"
+                    )
+                    
+                    # Sayfa içeriğinden lobi tespiti yap (locator yerine text arama)
+                    in_lobby = False
+                    
+                    try:
+                        first_indicator = self.page.locator(check_selector).first
+                        await first_indicator.wait_for(state="visible", timeout=30000)
+                        logger.info("✅ Toplantı kontrolleri tespit edildi!")
+                    except:
+                        # Locator bulamadı - text ile lobi kontrolü yap
+                        logger.info("Toplantı kontrolleri bulunamadı, text ile lobi kontrolü yapılıyor...")
+                        content_text = await self.page.content()
+                        in_lobby = ("Someone in the meeting" in content_text) or \
+                                   ("sizi içeri almalı" in content_text) or \
+                                   ("Toplantıdaki birisi sizi" in content_text) or \
+                                   ("kabul edilmeyi" in content_text) or \
+                                   ("lobide" in content_text) or \
+                                   ("almasını" in content_text) or \
+                                   ("ev sahibi" in content_text) or \
+                                   ("yakında" in content_text) or \
+                                   ("içeri alacak" in content_text) or \
+                                   ("Kısa sürede" in content_text) or \
+                                   ("Waiting for people" in content_text) or \
+                                   ("let you in" in content_text) or \
+                                   ("waiting" in content_text.lower())
+                        
+                        if not in_lobby:
+                            logger.error("❌ Ne toplantı kontrolleri ne de lobi tespit edildi.")
+                            raise Exception("Meeting indicators not found")
 
                 if in_lobby:
                     logger.info("⚠️ Durum: Bekleme Odası (Lobby) tespit edildi.")
@@ -713,33 +865,156 @@ class TeamsWebBot:
             logger.error(f"Chat açma hatası: {e}")
 
     async def send_message(self, message):
-        """Chat mesajı gönderir."""
+        """Chat mesajı gönderir - xdotool (sistem seviyesi klavye, isTrusted:true)."""
+        import re, subprocess, shutil
+
         try:
             await self.open_chat()
-            
-            logger.info(f"Mesaj yazılıyor: {message}")
-            
-            # Mesaj kutusu
-            editor = self.page.locator("div[role='textbox'], div[contenteditable='true'], textarea[data-tid='ckeditor-new-message']").last
-            
-            if await editor.count() > 0:
-                await editor.wait_for(state="visible", timeout=10000)
-                await editor.click()
-                await editor.fill(message) 
-                await asyncio.sleep(0.5)
-                await editor.press("Enter")
-                
-                send_btn = self.page.locator("button[aria-label='Gönder'], button[aria-label='Send'], button[data-tid='newMessage-send-button']").last
-                if await send_btn.is_visible():
-                    await send_btn.click()
-                    logger.info("Gönder butonuna basıldı.")
-                
-                logger.info("Mesaj gönderim işlemi tamamlandı.")
-            else:
-                logger.error("Mesaj kutusu (Editor) bulunamadı.")
+            await asyncio.sleep(2)
+
+            # Emoji'leri kaldır
+            clean_message = re.sub(
+                r'[^\x00-\x7F\u00C0-\u024F\u011E\u011F\u0130\u0131\u015E\u015F\u00D6\u00F6\u00DC\u00FC\u00C7\u00E7]+',
+                '', message
+            ).strip()
+            if not clean_message:
+                clean_message = "Merhaba! Ben Sesly Bot. Bu toplantiyi kaydediyorum."
+            logger.info(f"Mesaj gönderiliyor: {clean_message}")
+
+            # Editörü bul
+            diag = await self.page.evaluate("""
+                (() => {
+                    const selectors = [
+                        "div[data-tid='ckeditor'][contenteditable='true']",
+                        "div[role='textbox'][contenteditable='true']",
+                        "div[contenteditable='true']"
+                    ];
+                    for (const sel of selectors) {
+                        const el = document.querySelector(sel);
+                        if (el) {
+                            const rect = el.getBoundingClientRect();
+                            return { found: true, selector: sel,
+                                inViewport: rect.top >= 0 && rect.bottom <= window.innerHeight,
+                                rect: {top: Math.round(rect.top), left: Math.round(rect.left),
+                                       w: Math.round(rect.width), h: Math.round(rect.height)} };
+                        }
+                    }
+                    return { found: false };
+                })()
+            """)
+            logger.info(f"Editör teşhis: {diag}")
+
+            if not diag.get('found'):
+                logger.error("❌ Editör bulunamadı!")
+                return
+
+            selector = diag['selector']
+
+            # JS + Playwright ile focus al
+            await self.page.evaluate(f"""
+                const el = document.querySelector("{selector}");
+                if (el) {{
+                    el.scrollIntoView({{behavior: 'instant', block: 'center'}});
+                    el.focus();
+                    el.click();
+                }}
+            """)
+            await asyncio.sleep(0.5)
+            editor_loc = self.page.locator(selector).first
+            await editor_loc.click(force=True)
+            await asyncio.sleep(0.5)
+
+            sent = False
+
+            # ===== STRATEJİ 1: xdotool (Linux X11 sistem klavyesi) =====
+            if IS_LINUX and shutil.which("xdotool"):
+                try:
+                    logger.info("xdotool ile mesaj yazılıyor...")
+                    await self.page.keyboard.press("Control+a")
+                    await asyncio.sleep(0.2)
+                    result = subprocess.run(
+                        ["xdotool", "type", "--clearmodifiers", "--delay", "50", clean_message],
+                        capture_output=True, text=True, timeout=30
+                    )
+                    logger.info(f"xdotool: rc={result.returncode}, err={result.stderr[:80]}")
+                    await asyncio.sleep(0.5)
+                    content_check = await self.page.evaluate(f"""
+                        document.querySelector("{selector}")?.innerText?.trim() || ''
+                    """)
+                    logger.info(f"xdotool sonrası editör: '{content_check[:80]}'")
+                    if content_check:
+                        await self.page.keyboard.press("Enter")
+                        await asyncio.sleep(1)
+                        logger.info("✅ Mesaj gönderildi (xdotool + Enter).")
+                        sent = True
+                    else:
+                        logger.warning("⚠️ xdotool yazdı ama editör boş kaldı.")
+                except Exception as e:
+                    logger.warning(f"xdotool hatası: {e}")
+            elif IS_LINUX:
+                logger.warning("xdotool bulunamadı!")
+
+            # ===== STRATEJİ 2: xclip + Ctrl+V =====
+            if not sent and IS_LINUX and shutil.which("xclip"):
+                try:
+                    logger.info("xclip clipboard paste deneniyor...")
+                    subprocess.run(
+                        ["xclip", "-selection", "clipboard"],
+                        input=clean_message.encode('utf-8'),
+                        capture_output=True, timeout=10
+                    )
+                    await asyncio.sleep(0.3)
+                    await editor_loc.click(force=True)
+                    await asyncio.sleep(0.3)
+                    await self.page.keyboard.press("Control+a")
+                    await asyncio.sleep(0.1)
+                    await self.page.keyboard.press("Control+v")
+                    await asyncio.sleep(0.8)
+                    content_check = await self.page.evaluate(f"""
+                        document.querySelector("{selector}")?.innerText?.trim() || ''
+                    """)
+                    logger.info(f"xclip+paste sonrası: '{content_check[:80]}'")
+                    if content_check:
+                        await self.page.keyboard.press("Enter")
+                        await asyncio.sleep(1)
+                        logger.info("✅ Mesaj gönderildi (xclip + Ctrl+V + Enter).")
+                        sent = True
+                except Exception as e:
+                    logger.warning(f"xclip hatası: {e}")
+
+            # ===== STRATEJİ 3: execCommand (fallback) =====
+            if not sent:
+                try:
+                    result = await self.page.evaluate(f"""
+                        (() => {{
+                            const editor = document.querySelector("{selector}");
+                            if (!editor) return 'no_editor';
+                            editor.focus();
+                            document.execCommand('selectAll', false, null);
+                            document.execCommand('delete', false, null);
+                            const ok = document.execCommand('insertText', false, {repr(clean_message)});
+                            return ok ? 'ok' : 'false';
+                        }})()
+                    """)
+                    logger.info(f"execCommand sonucu: {result}")
+                    await asyncio.sleep(0.5)
+                    await self.page.keyboard.press("Enter")
+                    await asyncio.sleep(1)
+                    logger.info(f"Strateji 3 (execCommand={result}) denendi.")
+                    sent = True
+                except Exception as e:
+                    logger.error(f"execCommand hatası: {e}")
+
+            if not sent:
+                logger.error("❌ Tüm stratejiler başarısız!")
 
         except Exception as e:
             logger.error(f"Mesaj gönderme hatası: {e}")
+
+
+
+
+
 
     async def open_participants_list(self):
         """Katılımcı listesini açar (Robust with Wait)."""
@@ -879,21 +1154,15 @@ class TeamsWebBot:
                                     
                                     for stream in media_streams:
                                         if stream.get('type') == 'audio':
-                                            # ÖNCE: Gerçek speaking göstergelerini kontrol et
+                                            # SADECE gerçek speaking göstergelerini kontrol et
+                                            # serverMuted=False kontrolü KALDIRILDI (mikrofon açık ≠ konuşuyor)
                                             is_speaking = stream.get('isActiveSpeaker', False) or \
                                                          stream.get('isSpeaking', False) or \
                                                          stream.get('speaking', False)
                                             
-                                            # YEDEK: Eğer speaking field yoksa, unmuted kontrolü
-                                            # (ama sadece tek kişi unmuted ise güvenilir)
-                                            if not is_speaking and not stream.get('serverMuted', True):
-                                                # Mikrofon açık - potansiyel konuşmacı
-                                                is_speaking = True
-                                            
                                             if is_speaking:
                                                 if display_name not in active_speakers:
                                                     active_speakers.append(display_name)
-                                                    logger.info(f"🎤 [WS-ROSTER] Active speaker: {display_name}")
                                                 break
                         
                     except Exception as e:
@@ -940,7 +1209,7 @@ class TeamsWebBot:
                 Path("debug_speaker_detection.txt").write_text("\n".join(debug_log), encoding="utf-8")
             except: pass
             
-            logger.info(f"🗣️ Konuşanlar (WebSocket): {', '.join(active_speakers)}")
+            logger.debug(f"🗣️ Konuşanlar (WebSocket): {', '.join(active_speakers)}")
             return active_speakers
         else:
             debug_log.append("[WS-ROSTER] No WebSocket data after retry, falling back to Grid/List scan")
@@ -1145,7 +1414,7 @@ class TeamsWebBot:
                 
                 # Debug kaldırıldı - sadece uyarı logla
                 if not Path("_debug_logged").exists():
-                    logger.warning("Katılımcı listesi bulunamadı.")
+                    logger.debug("Katılımcı listesi bulunamadı.")
                 return []
 
             # Tüm elemanları al
@@ -1276,9 +1545,15 @@ class TeamsWebBot:
         """Toplantı bitti mi veya geçersiz mi kontrol eder."""
         try:
             if self.page.is_closed():
+                logger.info("Sayfa kapanmış, toplantı bitti.")
+                self.end_reason = "normal"
                 return True
 
-            # 1. Metin Kontrolü (Kesin Bitiş)
+            # ===== 0. İlk join URL'ini kaydet =====
+            if self._meeting_url_at_join is None:
+                self._meeting_url_at_join = self.page.url
+
+            # ===== 1. Metin Kontrolü (Kesin Bitiş) =====
             end_factors = [
                 "text=Meeting ended",
                 "text=Toplantı bitti",
@@ -1286,15 +1561,37 @@ class TeamsWebBot:
                 "text=Toplantıdan kaldırıldınız",
                 "text=Çağrınızdan memnun musunuz?",
                 "text=Teams'e bugün ücretsiz katılın",
-                "text=Daha fazla bilgi edinin"
+                "text=Daha fazla bilgi edinin",
+                "text=You left the meeting",
+                "text=Toplantıdan ayrıldınız",
+                "text=The meeting has ended",
+                "text=Call ended",
+                "text=Arama sona erdi",
+                "text=Rejoin",
+                "text=Yeniden katıl",
             ]
             for selector in end_factors:
-                 if await self.page.locator(selector).is_visible():
-                     logger.info(f"Toplantı bitiş mesajı tespit edildi: {selector}")
-                     self.end_reason = "normal"
-                     return True
+                try:
+                    if await self.page.locator(selector).first.is_visible(timeout=500):
+                        logger.info(f"Toplantı bitiş mesajı tespit edildi: {selector}")
+                        self.end_reason = "normal"
+                        return True
+                except: continue
 
-            # 2. GEÇERSİZ/ESKİ LİNK TESPİTİ (YENİ!)
+            # ===== 2. URL Değişim Kontrolü =====
+            current_url = self.page.url.lower()
+            post_meeting_indicators = [
+                "post-meeting", "feedback", "call-ended",
+                "meeting-ended", "about:blank",
+                "login.microsoftonline", "login.live.com"
+            ]
+            for indicator in post_meeting_indicators:
+                if indicator in current_url:
+                    logger.info(f"URL bitiş göstergesi tespit edildi: {indicator} (URL: {current_url[:100]})")
+                    self.end_reason = "normal"
+                    return True
+
+            # ===== 3. GEÇERSİZ/ESKİ LİNK TESPİTİ =====
             try:
                 content = (await self.page.content()).lower()
                 invalid_phrases = [
@@ -1322,26 +1619,51 @@ class TeamsWebBot:
                         return True
             except:
                 pass
-            
 
+            # ===== 4. Hangup/Leave Butonu Kaybı =====
+            # Toplantı içindeyken bu butonlar HER ZAMAN olmalı
+            # Ardışık 3 kontrolde de bulunamazsa → toplantı bitmiş
+            try:
+                controls_selector = (
+                    "button[data-tid='hangup-button'], "
+                    "button[aria-label='Leave'], "
+                    "button[aria-label='Ayrıl'], "
+                    "button[id='hangup-button']"
+                )
+                controls = self.page.locator(controls_selector).first
+                if await controls.count() > 0 and await controls.is_visible():
+                    self._no_controls_count = 0  # Reset
+                else:
+                    self._no_controls_count += 1
+                    if self._no_controls_count >= 3:
+                        logger.info(f"⚠️ Toplantı kontrolleri {self._no_controls_count} ardışık kontrolde bulunamadı. Toplantı bitmiş.")
+                        self.end_reason = "normal"
+                        return True
+            except:
+                self._no_controls_count += 1
+                if self._no_controls_count >= 3:
+                    logger.info("Toplantı kontrolleri erişilemez, toplantı bitmiş.")
+                    self.end_reason = "normal"
+                    return True
             
-            # 2. "Başkalarının katılması bekleniyor" ve "Tek Kişi" Timeout
-            # Bu durumlar hemen çıkış sebebi değil, 60 saniye sürerse çıkış sebebidir.
+            # ===== 5. "Başkalarının katılması bekleniyor" / Tek Kişi Timeout =====
             try:
                 waiting_texts = [
                     "text=Başkalarının katılması bekleniyor",
                     "text=Waiting for others to join",
                     "text=When the meeting starts, we'll let people know",
-                    "text=Bu toplantıda (1)"  # Safety Net'i buraya taşıdık (Timeout'a tabi olsun)
+                    "text=Bu toplantıda (1)"
                 ]
                 
                 is_waiting = False
                 for txt in waiting_texts:
-                    if await self.page.locator(txt).is_visible():
-                        is_waiting = True
-                        break
+                    try:
+                        if await self.page.locator(txt).first.is_visible(timeout=500):
+                            is_waiting = True
+                            break
+                    except: continue
                 
-                # Ayrıca katılımcı listesinden de kontrol (Yazı değişebilir ama sayı 1 ise)
+                # Katılımcı listesinden de kontrol
                 if not is_waiting:
                     try:
                         participant_list = self.page.locator("ul[role='list']").last
@@ -1354,33 +1676,66 @@ class TeamsWebBot:
                 if is_waiting:
                     if self.waiting_start_time is None:
                         self.waiting_start_time = time.time()
-                        logger.info("⏳ Tek kişi/Bekleme modu tespit edildi. Sayaç başladı.")
+                        logger.info("⏳ Tek kişi/Bekleme modu tespit edildi. 2 dk sayacı başladı.")
                     else:
                         elapsed = time.time() - self.waiting_start_time
-                        if elapsed > 120: # 2 Dakika kuralı (User request)
+                        if elapsed > 120:
                             logger.info(f"⌛ Bekleme/Yalnızlık süresi ({elapsed:.1f}s) doldu. Toplantı bitmiş sayılıyor.")
+                            self.end_reason = "normal"
                             return True
                 else:
-                    # Durum düzeldi (biri geldi), sayacı sıfırla
                     if self.waiting_start_time is not None:
-                         logger.info("✅ Katılımcı geldi, bekleme sayacı sıfırlandı.")
-                         self.waiting_start_time = None
+                        logger.info("✅ Katılımcı geldi, bekleme sayacı sıfırlandı.")
+                        self.waiting_start_time = None
 
-            except Exception as e:
+            except:
                 pass
-            
-            # ( Eski Safety Net Bloğu kaldırıldı çünkü yukarıya entegre edildi )
-                 
+                  
         except Exception as e:
             if "closed" in str(e).lower():
                 return True
         return False
 
     async def close(self):
-        """Tarayıcıyı kapatır."""
-        if self.browser:
-            await self.browser.close()
-            logger.info("Tarayıcı kapatıldı.")
-        if self.playwright:
-            await self.playwright.stop()
-            
+        """Tarayıcı ve tüm kaynakları güvenli şekilde kapatır."""
+        logger.info("Tarayıcı kapatılıyor...")
+        
+        # 1. Sayfayı kapat
+        try:
+            if self.page and not self.page.is_closed():
+                await self.page.close()
+                logger.info("Sayfa kapatıldı.")
+        except Exception as e:
+            logger.debug(f"Sayfa kapatma hatası (önemsiz): {e}")
+        
+        # 2. Context'i kapat
+        try:
+            if self.context:
+                await self.context.close()
+                logger.info("Context kapatıldı.")
+        except Exception as e:
+            logger.debug(f"Context kapatma hatası (önemsiz): {e}")
+        
+        # 3. Browser'ı kapat
+        try:
+            if self.browser:
+                await self.browser.close()
+                logger.info("Browser kapatıldı.")
+        except Exception as e:
+            logger.debug(f"Browser kapatma hatası (önemsiz): {e}")
+        
+        # 4. Playwright'ı durdur
+        try:
+            if self.playwright:
+                await self.playwright.stop()
+                logger.info("Playwright durduruldu.")
+        except Exception as e:
+            logger.debug(f"Playwright durdurma hatası (önemsiz): {e}")
+        
+        # Referansları temizle
+        self.page = None
+        self.context = None
+        self.browser = None
+        self.playwright = None
+        
+        logger.info("✅ Tüm tarayıcı kaynakları temizlendi.")
